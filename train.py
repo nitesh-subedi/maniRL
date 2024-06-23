@@ -18,12 +18,12 @@ import argparse
 import wandb
 from wandb.integration.sb3 import WandbCallback
 
-run = wandb.init(
-    project="sb3",
-    sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
-    monitor_gym=True,  # auto-upload the videos of agents playing the game
-    save_code=False,  # optional
-)
+# run = wandb.init(
+#     project="sb3",
+#     sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
+#     monitor_gym=True,  # auto-upload the videos of agents playing the game
+#     save_code=False,  # optional
+# )
 
 CONFIG = {
     "width": 1280,
@@ -74,17 +74,17 @@ model = PPO(
     max_grad_norm=0.9,
     vf_coef=0.95,
     device="cuda:0",
-    tensorboard_log=f"{log_dir}/runs/{run.id}",
+    # tensorboard_log=f"{log_dir}/runs/{run.id}",
 )
 model.learn(
     total_timesteps=total_timesteps, 
-    callback=WandbCallback(
-        gradient_save_freq=100,
-        model_save_path=f"{log_dir}/models/{run.id}",
-        verbose=2,
-        )
+    # callback=WandbCallback(
+    #     gradient_save_freq=100,
+    #     model_save_path=f"{log_dir}/models/{run.id}",
+    #     verbose=2,
+    #     )
     )
 
-run.finish()
+# run.finish()
 
 my_env.close()
