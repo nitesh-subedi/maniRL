@@ -1,0 +1,188 @@
+{
+    "os": "Linux-6.5.0-44-generic-x86_64-with-glibc2.35",
+    "python": "3.10.14",
+    "heartbeatAt": "2024-07-24T19:34:26.078722",
+    "startedAt": "2024-07-24T19:34:25.655360",
+    "docker": null,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/train.py",
+    "codePathLocal": "train.py",
+    "codePath": "train.py",
+    "git": {
+        "remote": "git@github.com:hjy77/maniRL.git",
+        "commit": "c34b46c04be173cfac789b52104da66323658d50"
+    },
+    "email": null,
+    "root": "/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL",
+    "host": "scslab-titan2",
+    "username": "nitesh",
+    "executable": "/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/kit/python/bin/python3",
+    "cpu_count": 20,
+    "cpu_count_logical": 28,
+    "cpu_freq": {
+        "current": 4188.18375,
+        "min": 800.0,
+        "max": 4842.857142857143
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 4735.405,
+            "min": 800.0,
+            "max": 5300.0
+        },
+        {
+            "current": 4999.904,
+            "min": 800.0,
+            "max": 5300.0
+        },
+        {
+            "current": 4999.944,
+            "min": 800.0,
+            "max": 5300.0
+        },
+        {
+            "current": 4999.391,
+            "min": 800.0,
+            "max": 5300.0
+        },
+        {
+            "current": 3780.358,
+            "min": 800.0,
+            "max": 5300.0
+        },
+        {
+            "current": 2808.113,
+            "min": 800.0,
+            "max": 5300.0
+        },
+        {
+            "current": 4492.726,
+            "min": 800.0,
+            "max": 5300.0
+        },
+        {
+            "current": 3860.678,
+            "min": 800.0,
+            "max": 5300.0
+        },
+        {
+            "current": 4999.9,
+            "min": 800.0,
+            "max": 5400.0
+        },
+        {
+            "current": 5000.0,
+            "min": 800.0,
+            "max": 5400.0
+        },
+        {
+            "current": 5000.0,
+            "min": 800.0,
+            "max": 5400.0
+        },
+        {
+            "current": 800.0,
+            "min": 800.0,
+            "max": 5400.0
+        },
+        {
+            "current": 4999.942,
+            "min": 800.0,
+            "max": 5300.0
+        },
+        {
+            "current": 4999.909,
+            "min": 800.0,
+            "max": 5300.0
+        },
+        {
+            "current": 4999.972,
+            "min": 800.0,
+            "max": 5300.0
+        },
+        {
+            "current": 5000.0,
+            "min": 800.0,
+            "max": 5300.0
+        },
+        {
+            "current": 3899.762,
+            "min": 800.0,
+            "max": 4200.0
+        },
+        {
+            "current": 3899.217,
+            "min": 800.0,
+            "max": 4200.0
+        },
+        {
+            "current": 3899.372,
+            "min": 800.0,
+            "max": 4200.0
+        },
+        {
+            "current": 3898.239,
+            "min": 800.0,
+            "max": 4200.0
+        },
+        {
+            "current": 3899.487,
+            "min": 800.0,
+            "max": 4200.0
+        },
+        {
+            "current": 3898.732,
+            "min": 800.0,
+            "max": 4200.0
+        },
+        {
+            "current": 3899.891,
+            "min": 800.0,
+            "max": 4200.0
+        },
+        {
+            "current": 3899.442,
+            "min": 800.0,
+            "max": 4200.0
+        },
+        {
+            "current": 3899.684,
+            "min": 800.0,
+            "max": 4200.0
+        },
+        {
+            "current": 3901.103,
+            "min": 800.0,
+            "max": 4200.0
+        },
+        {
+            "current": 3898.735,
+            "min": 800.0,
+            "max": 4200.0
+        },
+        {
+            "current": 3899.239,
+            "min": 800.0,
+            "max": 4200.0
+        }
+    ],
+    "disk": {
+        "/": {
+            "total": 1876.218734741211,
+            "used": 233.09551620483398
+        }
+    },
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "gpu_count": 1,
+    "gpu_devices": [
+        {
+            "name": "NVIDIA GeForce RTX 4090",
+            "memory_total": 25757220864
+        }
+    ],
+    "memory": {
+        "total": 125.47972106933594
+    }
+}
