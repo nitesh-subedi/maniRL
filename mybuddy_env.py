@@ -100,7 +100,7 @@ class MyBuddyEnv(gym.Env):
 
         if collision:
             reward -= 1000
-        return reward + 1
+        return reward + 10
 
     def is_truncated(self):
         if self.world._world.current_time_step_index - self._steps_after_reset >= self._max_episode_length:
@@ -111,7 +111,7 @@ class MyBuddyEnv(gym.Env):
         self.world._world.reset()
         self.world._world.reset()
         # Set the goal cube to a random position around [0, -0.4, 0.22]
-        self.world.goal_cube.set_world_pose([np.random.uniform(-0.075, 0.075), -0.4, 0.22], [0, 0, 0, 1])
+        self.world.goal_cube.set_world_pose([0.0, -0.4, 0.22], [0, 0, 0, 1])
         return self.get_observation(), {}
 
     def render(self, mode="human"):

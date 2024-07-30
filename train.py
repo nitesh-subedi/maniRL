@@ -19,11 +19,11 @@ import wandb
 from wandb.integration.sb3 import WandbCallback
 
 run = wandb.init(
-    project="sb3",
+    project="plant_manipulation",
     sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
     monitor_gym=True,  # auto-upload the videos of agents playing the game
     save_code=False,  # optional
-    id="sb3-sac_isaac_collision",  # optional,
+    id="sb3-sac_entropy_001",  # optional,
 )
 
 CONFIG = {
@@ -41,8 +41,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--test", default=False, action="store_true", help="Run in test mode")
 args, unknown = parser.parse_known_args()
 
-log_dir = "./results/SAC_isaac_collision"
-
+log_dir = "./results/SAC_entropy_001"
 
 # set headles to false to visualize training
 my_env = maniEnv(config=CONFIG)
@@ -56,10 +55,10 @@ total_timesteps = 100000
 # if args.test is True:
 #     total_timesteps = 10000
 
-# policy_kwargs = dict(
-#     net_arch=[256, 256],
-#     activation_fn=th.nn.ReLU,
-# )
+policy_kwargs = dict(
+    net_arch=[256, 256],
+    activation_fn=th.nn.ReLU,
+)
 
 # callback = SaveOnBestTrainingRewardCallback(check_freq=10000, log_dir=log_dir)
 callback = CheckpointCallback(save_freq=10000, save_path=log_dir, name_prefix="franka_policy_checkpoint")
@@ -89,19 +88,20 @@ model = SAC(
     buffer_size=100000,
     batch_size=512,  # Increase batch size for potentially faster training
     learning_rate=3e-3,  # You may need to adjust this
-    # policy_kwargs=policy_kwargs,
+    policy_kwargs=policy_kwargs,
     tensorboard_log=f"{log_dir}/tensorboard/",
     device='cuda:0',
-    # gamma = 0.1
+    ent_coef='auto_0.01',
+    # gamma=0.2
 )
 
 model.learn(
-    total_timesteps=total_timesteps, 
+    total_timesteps=total_timesteps,
     callback=[WandbCallback(
         gradient_save_freq=100,
         model_save_path=f"{log_dir}/models/{run.id}",
         verbose=2), callback]
-    )
+)
 
 run.finish()
 
