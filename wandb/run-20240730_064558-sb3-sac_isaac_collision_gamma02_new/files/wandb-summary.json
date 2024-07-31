@@ -1,1 +1,0 @@
-{"global_step": 10855, "_timestamp": 1722346417.6099432, "rollout/ep_len_mean": 2.0, "rollout/ep_rew_mean": -998.0, "time/fps": 1.0, "train/actor_loss": 324.92303466796875, "train/critic_loss": 39983.75390625, "train/ent_coef": 5.381766319274902, "train/ent_coef_loss": -0.15881526470184326, "train/learning_rate": 0.003000000026077032, "_runtime": 6459.008164167404, "_step": 873}
