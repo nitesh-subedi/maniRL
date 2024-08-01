@@ -23,7 +23,7 @@ class SimulationEnv:
         self.physics_context.set_broadphase_type("GPU")
         self.physics_context.enable_gpu_dynamics(True)
 
-    def initilise(self):
+    def initialise(self):
         self.add_deformable_cylinder()
         self.add_goal_cube()
         self.add_camera()
@@ -142,3 +142,7 @@ class SimulationEnv:
 
     def get_image(self):
         return self.camera.get_rgba()[:, :, :3]
+
+    @property
+    def world(self):
+        return self._world

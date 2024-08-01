@@ -54,6 +54,7 @@ class Robot:
         self.robot_links = ["left_arm_l1", "left_arm_l2", "left_arm_l3", "left_arm_l4", "left_arm_l5",
                             "left_arm_l6"]
         self.collision_paths = [f"/mybuddy/{link}/collisions" for link in self.robot_links]
+        self.collision_paths.append("/World/defaultGroundPlane/GroundPlane/CollisionPlane")
         self.collision_checker_interface = omni.physx.get_physx_scene_query_interface()
         self.collision_meshes_for_checking = []
         self.initialise_collision_api()
@@ -69,9 +70,14 @@ class Robot:
             self.collision_meshes_for_checking.append([mesh_1, mesh_2])
 
     def check_collision(self):
-        for collision_mesh in self.collision_meshes_for_checking:
+        for i, collision_mesh in enumerate(self.collision_meshes_for_checking):
             num_hits = self.collision_checker_interface.overlap_mesh(collision_mesh[0], collision_mesh[1], self.on_hit,
                                                                      False)
+            if i == 5:
+                if num_hits >= 3:
+                    # print(f'Collision between {collision_mesh[0]} and {collision_mesh[1]}')
+                    print(num_hits)
+                    return True
             if num_hits >= 4:
                 # print(f'Collision between {collision_mesh[0]} and {collision_mesh[1]}')
                 print(num_hits)
@@ -101,7 +107,6 @@ class Robot:
         return self.robot_prim_path
 
     def send_angles(self, arm_index: int, angles: list[float], degrees: bool = False):
-        omni.timeline.get_timeline_interface().play()
         if self.dc is None:
             raise RuntimeError("Control interface not initialised. Please initialise the control interface first.")
         else:

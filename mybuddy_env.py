@@ -10,7 +10,7 @@ class MyBuddyEnv(gym.Env):
                  skip_frame=1,
                  physics_dt=1.0 / 60.0,
                  rendering_dt=1.0 / 60.0,
-                 max_episode_length=512,
+                 max_episode_length=200,
                  seed=0,
                  config={"headless": True, "anti_aliasing": 0}) -> None:
         super().__init__()
@@ -31,18 +31,18 @@ class MyBuddyEnv(gym.Env):
         # Import world
         from world.world import SimulationEnv
         self.world = SimulationEnv(config={"physics_dt": physics_dt, "rendering_dt": rendering_dt})
-        self.world.initilise()
+        self.world.initialise()
 
         from mybuddy.robot import Robot
         self.robot = Robot(
             urdf_path="/home/nitesh/workspace/rosws/mybuddy_robot_rl/src/mybuddy_description/urdf/urdf.urdf",
-            world=self.world._world, simulation_app=self._simulation_app)
+            world=self.world.world, simulation_app=self._simulation_app)
 
         import omni
         omni.timeline.get_timeline_interface().play()
         # self.robot.initialise_control_interface()
 
-        self.world._world.step()
+        self.world.world.step()
         self._simulation_app.update()
 
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(5,), dtype=np.float32)
@@ -56,28 +56,33 @@ class MyBuddyEnv(gym.Env):
         # Define the range for green color
         self.lower_green = np.array([35, 100, 100])
         self.upper_green = np.array([85, 255, 255])
+        self.episode_length = 0
 
     def step(self, action):
         action = np.clip(action, -1.0, 1.0)
-        action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.1
+        action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.2
         action = self.last_angles + action
         self.robot.send_angles(0, action, degrees=False)
+        for i in range(2):
+            self.world._world.step()
         collision = self.robot.check_collision()
         self.last_angles = action
-        for i in range(5):
-            self.world._world.step()
         obs = self.get_observation()
-        reward = self.get_reward(obs, collision)
-        done = self.get_done(collision)
+        reward, cube_pixels = self.get_reward(obs, collision)
+        done = self.get_done(collision, cube_pixels)
+        self.episode_length += 1
         truncated = self.is_truncated()
 
         return obs, float(reward), done, truncated, {}
 
     @staticmethod
-    def get_done(collision):
+    def get_done(collision, cube_pixels):
         if collision:
             return True
+        if cube_pixels > 2000:
+            return True
         return False
+
 
     def get_observation(self):
         self.world._world.render()
@@ -96,22 +101,29 @@ class MyBuddyEnv(gym.Env):
         # # Bitwise-AND mask and original image
         # res = cv2.bitwise_and(image, image, mask=mask)
 
-        reward = cv2.countNonZero(mask)
+        cube_pixels = cv2.countNonZero(mask)
+        reward = cube_pixels * 0.1
 
         if collision:
-            reward -= 1000
-        return reward + 10
+            reward -= 100
+        return reward + 1, cube_pixels
 
     def is_truncated(self):
         if self.world._world.current_time_step_index - self._steps_after_reset >= self._max_episode_length:
+            return True
+        if self.episode_length >= self._max_episode_length:
             return True
         return False
 
     def reset(self, seed=None):
         self.world._world.reset()
         self.world._world.reset()
+        self.robot.send_angles(0, np.deg2rad([0, -110, 120, -120, -95, 0]), degrees=False)
+        for i in range(30):
+            self.world._world.step()
         # Set the goal cube to a random position around [0, -0.4, 0.22]
-        self.world.goal_cube.set_world_pose([0.0, -0.4, 0.22], [0, 0, 0, 1])
+        self.world.goal_cube.set_world_pose([np.random.uniform(-0.02, 0.02), -0.4, 0.22], [0, 0, 0, 1])
+        self.episode_length = 0
         return self.get_observation(), {}
 
     def render(self, mode="human"):
