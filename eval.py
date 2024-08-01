@@ -6,17 +6,17 @@ CONFIG = {
     "height": 720,
     "window_width": 1920,
     "window_height": 1080,
-    "headless": True,
+    "headless": False,
     "renderer": "RayTracedLighting",
     "display_options": 3286,  # Set display options to show default grid
     "anti_aliasing": 0,
 }
 
 # Choose the policy path to visualize
-policy_path = "/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/results/PPO_seed_0_collision_fixed/mybuddy_policy_checkpoint_80000_steps.zip"
+policy_path = "/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/results/SAC_seed_42_lr0.01/mybuddy_policy_checkpoint_10000_steps.zip"
 
 my_env = maniEnv(config=CONFIG)
-model = PPO.load(policy_path)
+model = SAC.load(policy_path)
 obs, info = my_env.reset()
 
 for _ in range(5):

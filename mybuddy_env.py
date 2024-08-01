@@ -10,7 +10,7 @@ class MyBuddyEnv(gym.Env):
                  skip_frame=1,
                  physics_dt=1.0 / 60.0,
                  rendering_dt=1.0 / 60.0,
-                 max_episode_length=200,
+                 max_episode_length=512,
                  seed=0,
                  config={"headless": True, "anti_aliasing": 0}) -> None:
         super().__init__()
@@ -57,6 +57,7 @@ class MyBuddyEnv(gym.Env):
         self.lower_green = np.array([35, 100, 100])
         self.upper_green = np.array([85, 255, 255])
         self.episode_length = 0
+        self.initial_angles = np.deg2rad([0, -110, 120, -120, -95, 0])
 
     def step(self, action):
         action = np.clip(action, -1.0, 1.0)
@@ -68,7 +69,8 @@ class MyBuddyEnv(gym.Env):
         collision = self.robot.check_collision()
         self.last_angles = action
         obs = self.get_observation()
-        reward, cube_pixels = self.get_reward(obs, collision)
+        reward, cube_pixels = self.get_reward(obs, collision, action)
+
         done = self.get_done(collision, cube_pixels)
         self.episode_length += 1
         truncated = self.is_truncated()
@@ -83,14 +85,13 @@ class MyBuddyEnv(gym.Env):
             return True
         return False
 
-
     def get_observation(self):
         self.world._world.render()
         image = self.world.get_image()
         image = cv2.resize(image, (256, 256))
         return image
 
-    def get_reward(self, obs, collision):
+    def get_reward(self, obs, collision, action):
         camera_frame = obs
         # Convert the image to HSV color space
         hsv = cv2.cvtColor(camera_frame, cv2.COLOR_BGR2HSV)
@@ -98,32 +99,37 @@ class MyBuddyEnv(gym.Env):
         # Create a mask for green color
         mask = cv2.inRange(hsv, self.lower_green, self.upper_green)
 
-        # # Bitwise-AND mask and original image
-        # res = cv2.bitwise_and(image, image, mask=mask)
-
         cube_pixels = cv2.countNonZero(mask)
-        reward = cube_pixels * 0.1
+        normalized_pixels = cube_pixels / 2396.0
+        reward = normalized_pixels * 10
+
+        if cube_pixels == 0:
+            reward -= 5
 
         if collision:
-            reward -= 100
-        return reward + 1, cube_pixels
+            reward -= 10
+
+        reward -= np.linalg.norm(action - self.initial_angles) * 0.1
+        reward += 0.1
+
+        return reward, cube_pixels
 
     def is_truncated(self):
         if self.world._world.current_time_step_index - self._steps_after_reset >= self._max_episode_length:
             return True
-        if self.episode_length >= self._max_episode_length:
-            return True
+        # if self.episode_length >= self._max_episode_length:
+        #     return True
         return False
 
     def reset(self, seed=None):
         self.world._world.reset()
         self.world._world.reset()
-        self.robot.send_angles(0, np.deg2rad([0, -110, 120, -120, -95, 0]), degrees=False)
+        self.robot.send_angles(0, self.initial_angles, degrees=False)
         for i in range(30):
             self.world._world.step()
-        # Set the goal cube to a random position around [0, -0.4, 0.22]
         self.world.goal_cube.set_world_pose([np.random.uniform(-0.02, 0.02), -0.4, 0.22], [0, 0, 0, 1])
         self.episode_length = 0
+        self.last_angles = self.initial_angles
         return self.get_observation(), {}
 
     def render(self, mode="human"):
