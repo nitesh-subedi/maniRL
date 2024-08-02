@@ -3,6 +3,8 @@ from gymnasium import spaces
 import numpy as np
 import cv2
 from isaacsim import SimulationApp
+from datetime import datetime
+from scipy.spatial import distance
 
 
 class MyBuddyEnv(gym.Env):
@@ -10,9 +12,9 @@ class MyBuddyEnv(gym.Env):
                  skip_frame=1,
                  physics_dt=1.0 / 60.0,
                  rendering_dt=1.0 / 60.0,
-                 max_episode_length=512,
+                 max_episode_length=1000,
                  seed=0,
-                 config={"headless": True, "anti_aliasing": 0}) -> None:
+                 config={"headless": True, "anti_aliasing": 1}) -> None:
         super().__init__()
         self._simulation_app = SimulationApp(launch_config=config)
         self._simulation_app.set_setting("/app/window/drawMouse", True)
@@ -42,7 +44,7 @@ class MyBuddyEnv(gym.Env):
         omni.timeline.get_timeline_interface().play()
         # self.robot.initialise_control_interface()
 
-        self.world.world.step()
+        self.world._world.step()
         self._simulation_app.update()
 
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(5,), dtype=np.float32)
@@ -58,6 +60,14 @@ class MyBuddyEnv(gym.Env):
         self.upper_green = np.array([85, 255, 255])
         self.episode_length = 0
         self.initial_angles = np.deg2rad([0, -110, 120, -120, -95, 0])
+        # Initialize parameters for EXPLORS
+        self.phi = np.random.randn(1)  # Initialize phi parameter for intrinsic reward
+        self.w = {}  # Initialize state visitation counts for exploration bonus
+
+        # Initialize list to store previous actions for intrinsic reward calculation
+        self.previous_actions = []
+        self.last_good_actions = self.initial_angles
+        self.last_pixels = 0
 
     def step(self, action):
         action = np.clip(action, -1.0, 1.0)
@@ -70,12 +80,17 @@ class MyBuddyEnv(gym.Env):
         self.last_angles = action
         obs = self.get_observation()
         reward, cube_pixels = self.get_reward(obs, collision, action)
+        intrinsic_reward = self.get_intrinsic_reward(action)
+        exploration_bonus = self.get_exploration_bonus(obs)
+
+        # Combine rewards
+        total_reward = reward + intrinsic_reward + exploration_bonus
 
         done = self.get_done(collision, cube_pixels)
         self.episode_length += 1
         truncated = self.is_truncated()
 
-        return obs, float(reward), done, truncated, {}
+        return obs, float(total_reward), done, truncated, {}
 
     @staticmethod
     def get_done(collision, cube_pixels):
@@ -87,8 +102,10 @@ class MyBuddyEnv(gym.Env):
 
     def get_observation(self):
         self.world._world.render()
+        self.world._world.step()
         image = self.world.get_image()
         image = cv2.resize(image, (256, 256))
+
         return image
 
     def get_reward(self, obs, collision, action):
@@ -101,15 +118,23 @@ class MyBuddyEnv(gym.Env):
 
         cube_pixels = cv2.countNonZero(mask)
         normalized_pixels = cube_pixels / 2396.0
-        reward = normalized_pixels * 10
+        reward = normalized_pixels * 100
 
         if cube_pixels == 0:
             reward -= 5
+        else:
+            if self.last_pixels < cube_pixels:
+                reward += 20
+                self.last_good_actions = action
+            now = datetime.now()
+            current_time = now.strftime("%H:%M:%S")
+            cv2.imwrite(f"/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image{current_time}.png",
+                        camera_frame)
 
         if collision:
             reward -= 10
 
-        reward -= np.linalg.norm(action - self.initial_angles) * 0.1
+        reward -= np.linalg.norm(action - self.last_good_actions)
         reward += 0.1
 
         return reward, cube_pixels
@@ -130,6 +155,8 @@ class MyBuddyEnv(gym.Env):
         self.world.goal_cube.set_world_pose([np.random.uniform(-0.02, 0.02), -0.4, 0.22], [0, 0, 0, 1])
         self.episode_length = 0
         self.last_angles = self.initial_angles
+        self.previous_actions = []
+        self.w = {}
         return self.get_observation(), {}
 
     def render(self, mode="human"):
@@ -142,3 +169,40 @@ class MyBuddyEnv(gym.Env):
         self.np_random, seed = gym.utils.seeding.np_random(seed)
         np.random.seed(seed)
         return [seed]
+
+    def get_intrinsic_reward(self, action):
+        # Compute intrinsic reward based on action novelty
+        decay_factor = 0.9  # Adjust this factor to control the weighting
+
+        if not self.previous_actions:
+            intrinsic_reward = 1.0
+        else:
+            weighted_distances = []
+            for i, prev_action in enumerate(self.previous_actions):
+                weight = decay_factor ** (len(self.previous_actions) - i - 1)
+                distance_to_prev_action = distance.euclidean(action, prev_action)
+                weighted_distances.append(weight * distance_to_prev_action)
+
+            min_weighted_distance = min(weighted_distances)
+            intrinsic_reward = 1.0 / (1.0 + min_weighted_distance)
+
+        self.previous_actions.append(action)
+        return intrinsic_reward
+
+    def get_exploration_bonus(self, obs):
+        # Extract state abstraction from observation (e.g., using a hash function or a neural network)
+        state_abstraction = self.state_abstraction(obs)
+
+        if state_abstraction not in self.w:
+            self.w[state_abstraction] = 0
+
+        self.w[state_abstraction] += 1
+        pseudo_count = self.w[state_abstraction]
+        bonus = np.sqrt(1.0 / (1 + pseudo_count))
+
+        return bonus
+
+    def state_abstraction(self, obs):
+        # Example state abstraction using a simple hash of the observation
+        # You can replace this with a more sophisticated abstraction if needed
+        return hash(obs.tostring())

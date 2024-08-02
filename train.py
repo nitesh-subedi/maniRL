@@ -14,7 +14,7 @@ from stable_baselines3.common.utils import set_random_seed
 # seed_number = 42
 # set_random_seed(seed_number)
 
-name = f"SAC_env_bug_fixed_v2"
+name = f"SAC_intrinsic_reward_v3"
 run = wandb.init(
     project="plant_manipulation",
     sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
@@ -56,9 +56,9 @@ model = SAC(
     my_env,
     verbose=1,
     buffer_size=100000,  # Replay buffer size
-    batch_size=128,
+    batch_size=256,
     learning_rate=0.00001,
-    gamma=0.99,
+    gamma=0.9,
     ent_coef='auto',
     tau=0.005,
     train_freq=(1, "episode"),
