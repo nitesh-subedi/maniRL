@@ -5,6 +5,7 @@ import cv2
 from isaacsim import SimulationApp
 from datetime import datetime
 from scipy.spatial import distance
+import time
 
 
 class MyBuddyEnv(gym.Env):
@@ -68,15 +69,20 @@ class MyBuddyEnv(gym.Env):
         self.previous_actions = []
         self.last_good_actions = self.initial_angles
         self.last_pixels = 0
+        self.observing_cube = False
+        self.tic = time.time()
 
     def step(self, action):
         action = np.clip(action, -1.0, 1.0)
-        action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.2
+        if self.observing_cube:
+            action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.05
+        else:
+            action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.1
         action = self.last_angles + action
         self.robot.send_angles(0, action, degrees=False)
         for i in range(2):
             self.world._world.step()
-        collision = self.robot.check_collision()
+        collision, end_effector_collision = self.robot.check_collision()
         self.last_angles = action
         obs = self.get_observation()
         reward, cube_pixels = self.get_reward(obs, collision, action)
@@ -85,6 +91,8 @@ class MyBuddyEnv(gym.Env):
 
         # Combine rewards
         total_reward = reward + intrinsic_reward + exploration_bonus
+        if end_effector_collision:
+            total_reward -= 20
 
         done = self.get_done(collision, cube_pixels)
         self.episode_length += 1
@@ -96,8 +104,8 @@ class MyBuddyEnv(gym.Env):
     def get_done(collision, cube_pixels):
         if collision:
             return True
-        if cube_pixels > 2000:
-            return True
+        # if cube_pixels > 2000:
+        #     return True
         return False
 
     def get_observation(self):
@@ -118,24 +126,35 @@ class MyBuddyEnv(gym.Env):
 
         cube_pixels = cv2.countNonZero(mask)
         normalized_pixels = cube_pixels / 2396.0
-        reward = normalized_pixels * 100
+        reward = normalized_pixels * 150
 
         if cube_pixels == 0:
             reward -= 5
+            self.observing_cube = False
         else:
+            self.observing_cube = True
             if self.last_pixels < cube_pixels:
-                reward += 20
+                reward += 10
                 self.last_good_actions = action
+                self.last_pixels = cube_pixels
             now = datetime.now()
             current_time = now.strftime("%H:%M:%S")
             cv2.imwrite(f"/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image{current_time}.png",
                         camera_frame)
+        
 
         if collision:
             reward -= 10
 
-        reward -= np.linalg.norm(action - self.last_good_actions)
-        reward += 0.1
+        if not (self.last_good_actions[:5] == self.initial_angles[:5]).any():
+            reward -= np.abs(np.linalg.norm(action - self.last_good_actions)) * 5
+        
+        if time.time() - self.tic > 5:
+            self.tic = time.time()
+            print(f"Good Actions: {self.last_good_actions}")
+            print(f"Angle error: {np.abs(np.linalg.norm(action - self.last_good_actions))}")
+        
+        reward += 1
 
         return reward, cube_pixels
 
@@ -157,6 +176,7 @@ class MyBuddyEnv(gym.Env):
         self.last_angles = self.initial_angles
         self.previous_actions = []
         self.w = {}
+        self.observing_cube = False
         return self.get_observation(), {}
 
     def render(self, mode="human"):
@@ -172,10 +192,10 @@ class MyBuddyEnv(gym.Env):
 
     def get_intrinsic_reward(self, action):
         # Compute intrinsic reward based on action novelty
-        decay_factor = 0.9  # Adjust this factor to control the weighting
+        decay_factor = 0.9
 
         if not self.previous_actions:
-            intrinsic_reward = 1.0
+            intrinsic_reward = 0.1
         else:
             weighted_distances = []
             for i, prev_action in enumerate(self.previous_actions):
@@ -184,13 +204,12 @@ class MyBuddyEnv(gym.Env):
                 weighted_distances.append(weight * distance_to_prev_action)
 
             min_weighted_distance = min(weighted_distances)
-            intrinsic_reward = 1.0 / (1.0 + min_weighted_distance)
+            intrinsic_reward = 1.0 / (1.0 + min_weighted_distance) * 0.1
 
         self.previous_actions.append(action)
         return intrinsic_reward
 
     def get_exploration_bonus(self, obs):
-        # Extract state abstraction from observation (e.g., using a hash function or a neural network)
         state_abstraction = self.state_abstraction(obs)
 
         if state_abstraction not in self.w:
@@ -203,6 +222,4 @@ class MyBuddyEnv(gym.Env):
         return bonus
 
     def state_abstraction(self, obs):
-        # Example state abstraction using a simple hash of the observation
-        # You can replace this with a more sophisticated abstraction if needed
         return hash(obs.tostring())

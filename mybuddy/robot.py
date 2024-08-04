@@ -75,15 +75,15 @@ class Robot:
                                                                      False)
             if i == 5:
                 if num_hits >= 3:
-                    # print(f'Collision between {collision_mesh[0]} and {collision_mesh[1]}')
+                    print(f'Collision between {collision_mesh[0]} and {collision_mesh[1]}')
                     print(num_hits)
-                    return True
+                    return True, True
             if num_hits >= 4:
                 # print(f'Collision between {collision_mesh[0]} and {collision_mesh[1]}')
                 print(num_hits)
-                return True
+                return True, False
 
-        return False
+        return False, False
 
     def initialise_control_interface(self):
         self.dc = _dynamic_control.acquire_dynamic_control_interface()
