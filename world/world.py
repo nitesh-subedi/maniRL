@@ -49,7 +49,7 @@ class SimulationEnv:
 
         # Contact offset
         contact_offset_attr = self.cylinder_prim.GetAttribute("physxCollision:contactOffset")
-        contact_offset_attr.Set(0.01)
+        contact_offset_attr.Set(0.001)
 
         self.attach_cylinder_to_ground()
 

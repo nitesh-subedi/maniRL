@@ -2,13 +2,13 @@ from mybuddy_env import MyBuddyEnv as maniEnv
 from stable_baselines3 import SAC, PPO
 from stable_baselines3.ppo import CnnPolicy as ppocnn
 from stable_baselines3.sac import CnnPolicy as saccnn
-from stable_baselines3.common.callbacks import CheckpointCallback
+from stable_baselines3.common.callbacks import CheckpointCallback, BaseCallback
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.monitor import Monitor
 import argparse
 import wandb
 from wandb.integration.sb3 import WandbCallback
-from stable_baselines3.common.utils import set_random_seed
+from stable_baselines3.common.utils import get_schedule_fn, set_random_seed
 
 
 # # Custom Callback for Saving Models
@@ -43,7 +43,7 @@ from stable_baselines3.common.utils import set_random_seed
 # seed_number = 42
 set_random_seed(0)
 
-name = f"SAC_finetuning_v2"
+name = f"PPO_int_reward"
 run = wandb.init(
     project="new_tests",
     sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
@@ -100,13 +100,14 @@ policy_kwargs = dict(net_arch=dict(pi=[64, 64], qf=[400, 300]))
 #     device="cuda:0",
 #     tensorboard_log=f"{log_dir}/tensorboard",
 # )
-# model = PPO(
-#     ppocnn,
-#     my_env,
-#     batch_size=1024,
-#     verbose=1)
 
-model = SAC.load("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/results/SAC_intrinsic_reward_v17/mybuddy_policy_checkpoint_380000_steps.zip", env=my_env, verbose=1)
+# model = SAC.load("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/results/VSAC_v2_increased_action_input/mybuddy_policy_checkpoint_100000_steps.zip", env=my_env)
+
+model = PPO(
+    ppocnn,
+    my_env,
+    batch_size=2024,
+    verbose=1)
 
 model.learn(
     total_timesteps=total_timesteps,

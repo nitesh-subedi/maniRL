@@ -6,6 +6,8 @@ from isaacsim import SimulationApp
 from datetime import datetime
 from scipy.spatial import distance
 import time
+from collections import deque
+
 
 
 class MyBuddyEnv(gym.Env):
@@ -66,18 +68,20 @@ class MyBuddyEnv(gym.Env):
         self.w = {}  # Initialize state visitation counts for exploration bonus
 
         # Initialize list to store previous actions for intrinsic reward calculation
-        self.previous_actions = []
+        max_length = 1000
+        self.previous_actions = deque(maxlen=max_length)
         self.last_good_actions = self.initial_angles
         self.last_pixels = 0
         self.observing_cube = False
         self.tic = time.time()
+        self.total_visits = 0
 
     def step(self, action):
         action = np.clip(action, -1.0, 1.0)
         if self.observing_cube:
-            action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.05
+            action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.2
         else:
-            action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.1
+            action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.2
         action = self.last_angles + action
         self.robot.send_angles(0, action, degrees=False)
         for i in range(2):
@@ -87,10 +91,13 @@ class MyBuddyEnv(gym.Env):
         obs = self.get_observation()
         reward, cube_pixels = self.get_reward(obs, collision, action)
         intrinsic_reward = self.get_intrinsic_reward(action)
-        exploration_bonus = self.get_exploration_bonus(obs)
+        # intrinsic_reward = 0
+        # if not self.observing_cube:
+        #     intrinsic_reward = self.get_intrinsic_reward(action)
+        # exploration_bonus = self.get_exploration_bonus(obs)
 
         # Combine rewards
-        total_reward = reward + intrinsic_reward + exploration_bonus
+        total_reward = reward + intrinsic_reward #+ exploration_bonus
         if end_effector_collision:
             total_reward -= 20
 
@@ -134,19 +141,19 @@ class MyBuddyEnv(gym.Env):
         else:
             self.observing_cube = True
             if self.last_pixels < cube_pixels:
-                reward += 10
+                reward += 50
                 self.last_good_actions = action
                 self.last_pixels = cube_pixels
-            now = datetime.now()
-            current_time = now.strftime("%H:%M:%S")
-            cv2.imwrite(f"/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image{current_time}.png",
-                        camera_frame)
+            # now = datetime.now()
+            # current_time = now.strftime("%H:%M:%S")
+            # cv2.imwrite(f"/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image{current_time}.png",
+            #             camera_frame)
         
 
         if collision:
-            reward -= 10
+            reward -= 20
 
-        if not (self.last_good_actions[:5] == self.initial_angles[:5]).any():
+        if not (self.last_good_actions[:5] == self.initial_angles[:5]).any() and not self.observing_cube:
             reward -= np.abs(np.linalg.norm(action - self.last_good_actions)) * 5
         
         if time.time() - self.tic > 5:
@@ -174,9 +181,10 @@ class MyBuddyEnv(gym.Env):
         self.world.goal_cube.set_world_pose([np.random.uniform(-0.02, 0.02), -0.4, 0.22], [0, 0, 0, 1])
         self.episode_length = 0
         self.last_angles = self.initial_angles
-        self.previous_actions = []
+        # self.previous_actions = []
         self.w = {}
         self.observing_cube = False
+        self.total_visits = 0
         return self.get_observation(), {}
 
     def render(self, mode="human"):
@@ -217,9 +225,13 @@ class MyBuddyEnv(gym.Env):
 
         self.w[state_abstraction] += 1
         pseudo_count = self.w[state_abstraction]
-        bonus = np.sqrt(1.0 / (1 + pseudo_count))
-
-        return bonus
+        bonus = np.sqrt(np.log(1 + self.total_visits) / (1 + pseudo_count))
+        self.total_visits += 1
+        # bonus = np.sqrt(1.0 / (1 + pseudo_count))
+        if time.time() - self.tic > 5:
+            self.tic = time.time()
+            print(f"Exploration Bonus: {bonus}")
+        return bonus * 2
 
     def state_abstraction(self, obs):
         return hash(obs.tostring())
