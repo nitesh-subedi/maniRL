@@ -75,13 +75,20 @@ class MyBuddyEnv(gym.Env):
         self.observing_cube = False
         self.tic = time.time()
         self.total_visits = 0
+        self.cube_pixels = 0
 
     def step(self, action):
+        # if time.time() - self.tic > 3:
+        #     self.world.goal_cube.set_world_pose([np.random.uniform(-0.06, 0.06), -0.4, 0.22], [0, 0, 0, 1])
+        #     self.tic = time.time()
         action = np.clip(action, -1.0, 1.0)
+        # if self.cube_pixels > 2000:
+        #     action = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        # else:
         if self.observing_cube:
-            action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.2
+            action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.05
         else:
-            action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.2
+            action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.1
         action = self.last_angles + action
         self.robot.send_angles(0, action, degrees=False)
         for i in range(2):
@@ -89,7 +96,7 @@ class MyBuddyEnv(gym.Env):
         collision, end_effector_collision = self.robot.check_collision()
         self.last_angles = action
         obs = self.get_observation()
-        reward, cube_pixels = self.get_reward(obs, collision, action)
+        reward, self.cube_pixels = self.get_reward(obs, collision, action)
         intrinsic_reward = self.get_intrinsic_reward(action)
         # intrinsic_reward = 0
         # if not self.observing_cube:
@@ -101,7 +108,7 @@ class MyBuddyEnv(gym.Env):
         if end_effector_collision:
             total_reward -= 20
 
-        done = self.get_done(collision, cube_pixels)
+        done = self.get_done(collision, self.cube_pixels)
         self.episode_length += 1
         truncated = self.is_truncated()
 
