@@ -5,10 +5,10 @@ from stable_baselines3.sac import CnnPolicy as saccnn
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.monitor import Monitor
-import argparse
 import wandb
 from wandb.integration.sb3 import WandbCallback
 from stable_baselines3.common.utils import set_random_seed
+import torch as th
 
 
 # # Custom Callback for Saving Models
@@ -43,7 +43,7 @@ from stable_baselines3.common.utils import set_random_seed
 # seed_number = 42
 # set_random_seed(0)
 
-name = f"PPO_exp_bonus_v2"
+name = f"PPO_deep"
 run = wandb.init(
     project="PPO_tests",
     sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
@@ -64,10 +64,6 @@ CONFIG = {
     "anti_aliasing": 0,
 }
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--test", default=False, action="store_true", help="Run in test mode")
-args, unknown = parser.parse_known_args()
-
 log_dir = f"./results/{name}"
 
 # set headless to false to visualize training
@@ -80,7 +76,7 @@ total_timesteps = 1000000
 
 callback = CheckpointCallback(save_freq=10000, save_path=log_dir, name_prefix="mybuddy_policy_checkpoint")
 
-policy_kwargs = dict(net_arch=dict(pi=[64, 64], qf=[400, 300]))
+policy_kwargs = dict(activation_fn=th.nn.ReLU, net_arch=dict(pi=[64, 64], vf=[400, 300]))
 
 # model = SAC(
 #     saccnn,  # You can replace "MlpPolicy" with your custom policy if needed
@@ -106,6 +102,7 @@ model = PPO(
     batch_size=256,
     gamma=0.9,
     ent_coef=0.008,
+    policy_kwargs=policy_kwargs,
     verbose=1,
     tensorboard_log=f"{log_dir}/tensorboard",)
 

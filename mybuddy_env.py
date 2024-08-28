@@ -8,7 +8,6 @@ import time
 from collections import deque
 from PIL import Image
 import imagehash
-from omni.isaac.lab.sim.converters import MeshConverter
 
 
 
