@@ -3,10 +3,12 @@ from gymnasium import spaces
 import numpy as np
 import cv2
 from isaacsim import SimulationApp
-from datetime import datetime
 from scipy.spatial import distance
 import time
 from collections import deque
+from PIL import Image
+import imagehash
+from omni.isaac.lab.sim.converters import MeshConverter
 
 
 
@@ -64,7 +66,6 @@ class MyBuddyEnv(gym.Env):
         self.episode_length = 0
         self.initial_angles = np.deg2rad([0, -110, 120, -120, -95, 0])
         # Initialize parameters for EXPLORS
-        self.phi = np.random.randn(1)  # Initialize phi parameter for intrinsic reward
         self.w = {}  # Initialize state visitation counts for exploration bonus
 
         # Initialize list to store previous actions for intrinsic reward calculation
@@ -101,10 +102,13 @@ class MyBuddyEnv(gym.Env):
         # intrinsic_reward = 0
         # if not self.observing_cube:
         #     intrinsic_reward = self.get_intrinsic_reward(action)
-        # exploration_bonus = self.get_exploration_bonus(obs)
+        exploration_bonus = self.get_exploration_bonus(obs)
+        # if time.time() - self.tic > 5:
+        #     self.tic = time.time()
+        #     print(f"Exploration Bonus: {exploration_bonus}")
 
         # Combine rewards
-        total_reward = reward + intrinsic_reward #+ exploration_bonus
+        total_reward = reward + intrinsic_reward + exploration_bonus
         if end_effector_collision:
             total_reward -= 20
 
@@ -161,12 +165,12 @@ class MyBuddyEnv(gym.Env):
             reward -= 20
 
         if not (self.last_good_actions[:5] == self.initial_angles[:5]).any() and not self.observing_cube:
-            reward -= np.abs(np.linalg.norm(action - self.last_good_actions)) * 5
+            reward -= np.abs(np.linalg.norm(action - self.last_good_actions)) * 10
         
-        if time.time() - self.tic > 5:
-            self.tic = time.time()
-            print(f"Good Actions: {self.last_good_actions}")
-            print(f"Angle error: {np.abs(np.linalg.norm(action - self.last_good_actions))}")
+        # if time.time() - self.tic > 5:
+        #     self.tic = time.time()
+        #     print(f"Good Actions: {self.last_good_actions}")
+        #     print(f"Angle error: {np.abs(np.linalg.norm(action - self.last_good_actions))}")
         
         reward += 1
 
@@ -227,18 +231,39 @@ class MyBuddyEnv(gym.Env):
     def get_exploration_bonus(self, obs):
         state_abstraction = self.state_abstraction(obs)
 
-        if state_abstraction not in self.w:
-            self.w[state_abstraction] = 0
+        closest_abstraction = None
+        min_hamming_distance = float('inf')
 
-        self.w[state_abstraction] += 1
-        pseudo_count = self.w[state_abstraction]
+        # Find the closest abstraction in terms of Hamming distance
+        for abstraction in self.w.keys():
+            hamming_distance = state_abstraction - abstraction
+            if hamming_distance < min_hamming_distance:
+                min_hamming_distance = hamming_distance
+                closest_abstraction = abstraction
+
+        # Update the visit count based on the closest state
+        if closest_abstraction is not None and min_hamming_distance < self.hamming_threshold:
+            self.w[closest_abstraction] += 1
+            pseudo_count = self.w[closest_abstraction]
+        else:
+            self.w[state_abstraction] = 1
+            pseudo_count = 1
+
         bonus = np.sqrt(np.log(1 + self.total_visits) / (1 + pseudo_count))
         self.total_visits += 1
-        # bonus = np.sqrt(1.0 / (1 + pseudo_count))
+
         if time.time() - self.tic > 5:
             self.tic = time.time()
             print(f"Exploration Bonus: {bonus}")
-        return bonus * 2
+        return bonus * 5
 
     def state_abstraction(self, obs):
-        return hash(obs.tostring())
+        # Convert the observation into an image format if necessary
+        obs_image = Image.fromarray(obs)
+        # Use average hashing to create a hash of the observation
+        return imagehash.average_hash(obs_image)
+
+    @property
+    def hamming_threshold(self):
+        # Define a threshold for the Hamming distance to consider states as similar
+        return 10

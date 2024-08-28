@@ -43,9 +43,9 @@ from stable_baselines3.common.utils import set_random_seed
 # seed_number = 42
 # set_random_seed(0)
 
-name = f"SAC_finetuning_v5"
+name = f"PPO_exp_bonus_v2"
 run = wandb.init(
-    project="new_tests",
+    project="PPO_tests",
     sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
     monitor_gym=True,  # auto-upload the videos of agents playing the game
     save_code=False,  # optional
@@ -82,29 +82,32 @@ callback = CheckpointCallback(save_freq=10000, save_path=log_dir, name_prefix="m
 
 policy_kwargs = dict(net_arch=dict(pi=[64, 64], qf=[400, 300]))
 
-model = SAC(
-    saccnn,  # You can replace "MlpPolicy" with your custom policy if needed
-    my_env,
-    verbose=1,
-    policy_kwargs=policy_kwargs,
-    buffer_size=100000,  # Replay buffer size
-    batch_size=256,  # Minibatch size
-    learning_rate=0.0008,
-    gamma=0.9,
-    ent_coef='auto',
-    tau=0.005,
-    train_freq=(1, "episode"),
-    gradient_steps=-1,
-    learning_starts=100,
-    use_sde=False,
-    device="cuda:0",
-    tensorboard_log=f"{log_dir}/tensorboard",
-)
-# model = PPO(
-#     ppocnn,
+# model = SAC(
+#     saccnn,  # You can replace "MlpPolicy" with your custom policy if needed
 #     my_env,
-#     batch_size=1024,
-#     verbose=1)
+#     verbose=1,
+#     policy_kwargs=policy_kwargs,
+#     buffer_size=100000,  # Replay buffer size
+#     batch_size=256,  # Minibatch size
+#     learning_rate=0.0008,
+#     gamma=0.9,
+#     ent_coef='auto',
+#     tau=0.005,
+#     train_freq=(1, "episode"),
+#     gradient_steps=-1,
+#     learning_starts=100,
+#     use_sde=False,
+#     device="cuda:0",
+#     tensorboard_log=f"{log_dir}/tensorboard",
+# )
+model = PPO(
+    ppocnn,
+    my_env,
+    batch_size=256,
+    gamma=0.9,
+    ent_coef=0.008,
+    verbose=1,
+    tensorboard_log=f"{log_dir}/tensorboard",)
 
 # model = SAC.load("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/results/SAC_intrinsic_reward_v17/mybuddy_policy_checkpoint_380000_steps.zip", env=my_env, verbose=1)
 
