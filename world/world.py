@@ -4,8 +4,9 @@ from omni.isaac.sensor import Camera
 import numpy as np
 import omni
 from omni.physx.scripts import deformableUtils, physicsUtils
-from pxr import UsdGeom, Gf, UsdPhysics, PhysxSchema
+from pxr import UsdGeom, Gf, PhysxSchema, UsdPhysics
 from omni.isaac.core import PhysicsContext
+from omni.isaac.core.utils.stage import add_reference_to_stage
 
 
 class SimulationEnv:
@@ -22,77 +23,97 @@ class SimulationEnv:
         self.physics_context.set_solver_type("TGS")
         self.physics_context.set_broadphase_type("GPU")
         self.physics_context.enable_gpu_dynamics(True)
+        # Physics scene
+        default_prim_path = str(self.stage.GetDefaultPrim().GetPath())
+        scene = UsdPhysics.Scene.Define(self.stage, default_prim_path + "/physicsScene")
+        scene.CreateGravityDirectionAttr().Set(Gf.Vec3f(0.0, 0.0, 1.0))
+        scene.CreateGravityMagnitudeAttr().Set(9.81)
 
-    def initialise(self):
-        self.add_deformable_cylinder()
+    def initialise(self, usd_path):
+        self.import_plant_mesh(usd_path)
         self.add_goal_cube()
         self.add_camera()
 
-    def add_deformable_cylinder(self):
-        _, self.cylinder_path = omni.kit.commands.execute("CreateMeshPrimCommand", prim_type="Cylinder")
-        self.cylinder_prim = self.stage.GetPrimAtPath(self.cylinder_path)
-        self.cylinder_mesh = UsdGeom.Xformable(self.cylinder_prim)
+    def import_plant_mesh(self, usd_path):
+        plant = add_reference_to_stage(usd_path=usd_path, prim_path="/Plant")
+        xform = UsdGeom.Xformable(plant)
+        xform.ClearXformOpOrder()
+        translateOp = xform.AddTranslateOp()
+        translateOp.Set(Gf.Vec3d(0, -0.22, 0.0))
+        rotateOp = xform.AddRotateXYZOp()
+        rotateOp.Set(Gf.Vec3d(0, 0, 0))
+        scaleOp = xform.AddScaleOp()
+        scaleOp.Set(Gf.Vec3d(0.05, 0.05, 0.05))
 
-        # Clear previous transformop
-        self.cylinder_mesh.ClearXformOpOrder()
-        translateOp = self.cylinder_mesh.AddTranslateOp()
-        translateOp.Set(Gf.Vec3d(0, -0.22, 0.2))
-        existing_scaleOps = [op for op in self.cylinder_mesh.GetOrderedXformOps() if
-                             op.GetOpType() == UsdGeom.XformOp.TypeScale]
-        if existing_scaleOps:
-            scaleOp = existing_scaleOps[0]
-        else:
-            scaleOp = self.cylinder_mesh.AddScaleOp(UsdGeom.XformOp.PrecisionDouble)
+        # Get childerns
+        meshes = plant.GetAllChildren()
+        meshes = [mesh.GetAllChildren()[0] for mesh in meshes]
+        meshes = meshes[1:]
+        prim_dict = dict(zip(plant.GetAllChildrenNames()[1:], meshes))
+        self.make_deformable(prim_dict)
 
-        scaleOp.Set(Gf.Vec3d(0.08, 0.08, 0.4))
-        self.make_deformable()
+        # # Contact offset
+        # contact_offset_attr = self.cylinder_prim.GetAttribute("physxCollision:contactOffset")
+        # contact_offset_attr.Set(0.001)
 
-        # Contact offset
-        contact_offset_attr = self.cylinder_prim.GetAttribute("physxCollision:contactOffset")
-        contact_offset_attr.Set(0.001)
+        self.attach_cylinder_to_ground(prim_dict)
 
-        self.attach_cylinder_to_ground()
-
-    def make_deformable(self, simulation_resolution=10):
+    def make_deformable(self, prim_dict, simulation_resolution=10):
+        key, value = list(prim_dict.items())[0]
         deformableUtils.add_physx_deformable_body(
-            self.stage,
-            self.cylinder_mesh.GetPath(),
-            collision_simplification=True,
-            simulation_hexahedral_resolution=simulation_resolution,
-            self_collision=False,
-        )
-        self.deformable_cylinder_material_path = omni.usd.get_stage_next_free_path(self.stage, "/cylinder1", True)
-        deformableUtils.add_deformable_body_material(
-            self.stage,
-            self.deformable_cylinder_material_path,
-            youngs_modulus=2e7,
-            poissons_ratio=0.15,
-            damping_scale=0.0,
-            dynamic_friction=0.5,
-            density=1000
-        )
+                self.stage,
+                value.GetPath(),
+                collision_simplification=True,
+                simulation_hexahedral_resolution=10,
+                self_collision=False,
+            )
+        
+        for key, value in list(prim_dict.items())[1:]:
+            deformableUtils.add_physx_deformable_body(
+                self.stage,
+                value.GetPath(),
+                collision_simplification=True,
+                simulation_hexahedral_resolution=simulation_resolution,
+                self_collision=False,
+            )
 
-        physicsUtils.add_physics_material_to_prim(self.stage, self.cylinder_mesh.GetPrim(),
-                                                  self.deformable_cylinder_material_path)
+        # self.deformable_cylinder_material_path = omni.usd.get_stage_next_free_path(self.stage, "/cylinder1", True)
+        # deformableUtils.add_deformable_body_material(
+        #     self.stage,
+        #     self.deformable_cylinder_material_path,
+        #     youngs_modulus=2e7,
+        #     poissons_ratio=0.15,
+        #     damping_scale=0.0,
+        #     dynamic_friction=0.5,
+        #     density=1000
+        # )
 
-    def attach_cylinder_to_ground(self):
-        # Attach the cylinder to the ground
-        cylinder_attachment_path = self.cylinder_mesh.GetPath().AppendElementString("attachment1")
-        self.cylinder_attachment = PhysxSchema.PhysxPhysicsAttachment.Define(self.stage, cylinder_attachment_path)
-        self.cylinder_attachment.GetActor0Rel().SetTargets([self.cylinder_mesh.GetPath()])
-        self.cylinder_attachment.GetActor1Rel().SetTargets(["/World/defaultGroundPlane/GroundPlane/CollisionPlane"])
+        # physicsUtils.add_physics_material_to_prim(self.stage, self.cylinder_mesh.GetPrim(),
+        #                                           self.deformable_cylinder_material_path)
 
-        self.auto_attachment_api = PhysxSchema.PhysxAutoAttachmentAPI.Apply(self.cylinder_attachment.GetPrim())
-
+    def attach_cylinder_to_ground(self, prim_dict):
+        key, value = list(prim_dict.items())[0]
+        attachment_path = value.GetPath().AppendElementString(f"attachment_{key}")
+        stalk_attachment = PhysxSchema.PhysxPhysicsAttachment.Define(self.stage, attachment_path)
+        stalk_attachment.GetActor0Rel().SetTargets([value.GetPath()])
+        stalk_attachment.GetActor1Rel().SetTargets(["/World/defaultGroundPlane/GroundPlane/CollisionPlane"])
+        auto_attachment_api = PhysxSchema.PhysxAutoAttachmentAPI.Apply(stalk_attachment.GetPrim())
         # Set attributes to reduce initial movement and gap
-        self.auto_attachment_api.GetPrim().GetAttribute('physxAutoAttachment:deformableVertexOverlapOffset').Set(0.06)
-        self.auto_attachment_api.GetPrim().GetAttribute('physxAutoAttachment:rigidSurfaceSamplingDistance').Set(0.01)
-        self.auto_attachment_api.GetPrim().GetAttribute('physxAutoAttachment:enableDeformableVertexAttachments').Set(
-            True)
-        self.auto_attachment_api.GetPrim().GetAttribute('physxAutoAttachment:enableRigidSurfaceAttachments').Set(True)
-        self.auto_attachment_api.GetPrim().GetAttribute('physxAutoAttachment:enableCollisionFiltering').Set(True)
-        self.auto_attachment_api.GetPrim().GetAttribute('physxAutoAttachment:collisionFilteringOffset').Set(0.01)
-        self.auto_attachment_api.GetPrim().GetAttribute('physxAutoAttachment:enableDeformableFilteringPairs').Set(True)
+        auto_attachment_api.GetPrim().GetAttribute('physxAutoAttachment:deformableVertexOverlapOffset').Set(0.01)
+        # auto_attachment_api.GetPrim().GetAttribute('physxAutoAttachment:rigidSurfaceSamplingDistance').Set(0.01)
+        auto_attachment_api.GetPrim().GetAttribute('physxAutoAttachment:enableDeformableVertexAttachments').Set(True)
+        auto_attachment_api.GetPrim().GetAttribute('physxAutoAttachment:enableRigidSurfaceAttachments').Set(True)
+        auto_attachment_api.GetPrim().GetAttribute('physxAutoAttachment:enableCollisionFiltering').Set(True)
+        auto_attachment_api.GetPrim().GetAttribute('physxAutoAttachment:collisionFilteringOffset').Set(0.01)
+        auto_attachment_api.GetPrim().GetAttribute('physxAutoAttachment:enableDeformableFilteringPairs').Set(True)
+    
+        for key, value in list(prim_dict.items())[1:]:
+            attachment_path = value.GetPath().AppendElementString(f"attachment_{key}")
+            stalk_attachment = PhysxSchema.PhysxPhysicsAttachment.Define(self.stage, attachment_path)
+            stalk_attachment.GetActor0Rel().SetTargets([value.GetPath()])
+            stalk_attachment.GetActor1Rel().SetTargets(["/Plant/stalk/plant_023"])
+            auto_attachment_api = PhysxSchema.PhysxAutoAttachmentAPI.Apply(stalk_attachment.GetPrim())
+
 
     def add_goal_cube(self):
         self.goal_cube = self._world.scene.add(

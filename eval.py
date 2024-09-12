@@ -15,10 +15,10 @@ CONFIG = {
 }
 
 # Choose the policy path to visualize
-policy_path = "/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/results/PPO_deep/mybuddy_policy_checkpoint_850000_steps.zip"
+policy_path = "/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/results/test3_vanilla_setup_action_intrinsic_removed/mybuddy_policy_checkpoint_220000_steps.zip"
 
 my_env = maniEnv(config=CONFIG)
-model = PPO.load(policy_path)
+model = SAC.load(policy_path)
 obs, info = my_env.reset()
 
 for _ in range(20):
@@ -31,7 +31,7 @@ for _ in range(20):
         actions, _ = model.predict(observation=obs, deterministic=True)
         print('\n')
         obs, reward, terminated, truncated, info = my_env.step(actions)
-        done = terminated or truncated
+        done = terminated or truncated  
         print(f"Reward: {reward}")
         time.sleep(0.1)
 

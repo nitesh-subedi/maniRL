@@ -37,7 +37,7 @@ class MyBuddyEnv(gym.Env):
         # Import world
         from world.world import SimulationEnv
         self.world = SimulationEnv(config={"physics_dt": physics_dt, "rendering_dt": rendering_dt})
-        self.world.initialise()
+        self.world.initialise(usd_path="omniverse://localhost/Users/nitesh/plant_v17/plant_v17.usd")
 
         from mybuddy.robot import Robot
         self.robot = Robot(
@@ -142,10 +142,10 @@ class MyBuddyEnv(gym.Env):
         mask = cv2.inRange(hsv, self.lower_green, self.upper_green)
 
         cube_pixels = cv2.countNonZero(mask)
-        normalized_pixels = cube_pixels / 2396.0
-        reward = normalized_pixels * 150
+        normalized_pixels = (cube_pixels) / 2396.0
+        reward = normalized_pixels * 100
 
-        if cube_pixels == 0:
+        if cube_pixels <= 500:
             reward -= 5
             self.observing_cube = False
         else:
@@ -154,10 +154,6 @@ class MyBuddyEnv(gym.Env):
                 reward += 50
                 self.last_good_actions = action
                 self.last_pixels = cube_pixels
-            # now = datetime.now()
-            # current_time = now.strftime("%H:%M:%S")
-            # cv2.imwrite(f"/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image{current_time}.png",
-            #             camera_frame)
         
 
         if collision:
@@ -165,11 +161,6 @@ class MyBuddyEnv(gym.Env):
 
         if not (self.last_good_actions[:5] == self.initial_angles[:5]).any() and not self.observing_cube:
             reward -= np.abs(np.linalg.norm(action - self.last_good_actions)) * 10
-        
-        # if time.time() - self.tic > 5:
-        #     self.tic = time.time()
-        #     print(f"Good Actions: {self.last_good_actions}")
-        #     print(f"Angle error: {np.abs(np.linalg.norm(action - self.last_good_actions))}")
         
         reward += 1
 
@@ -254,7 +245,7 @@ class MyBuddyEnv(gym.Env):
         if time.time() - self.tic > 5:
             self.tic = time.time()
             print(f"Exploration Bonus: {bonus}")
-        return bonus * 5
+        return bonus
 
     def state_abstraction(self, obs):
         # Convert the observation into an image format if necessary

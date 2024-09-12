@@ -1,16 +1,31 @@
-import cv2
-import numpy as np
-import matplotlib.pyplot as plt
+import casadi as ca
 
-camera_frame = cv2.imread("/home/nitesh/cube_image.jpg")
-# Convert the image to HSV color space
-hsv = cv2.cvtColor(camera_frame, cv2.COLOR_BGR2HSV)
+# Step 1: Create an Opti instance
+opti = ca.Opti()
 
-# Define the range for green color
-lower_green = np.array([35, 100, 100])
-upper_green = np.array([85, 255, 255])
+# Step 2: Define decision variables
+x = opti.variable(2)  # Two decision variables (x1, x2)
 
-# Create a mask for green color
-mask = cv2.inRange(hsv, lower_green, upper_green)
-print(cv2.countNonZero(mask))
-# Bitwise-AND mask and original image
+# Step 3: Define a parameter
+p = opti.parameter()  # Parameter 'p' to be passed later
+
+# Step 4: Define the objective function
+# Minimize (x1 - p)^2 + x2^2
+objective = (x[0] - p)**2 + x[1]**2
+opti.minimize(objective)
+
+# Step 5: Define the constraint
+# Constraint: x1 + x2 = 1
+opti.subject_to(x[0] + x[1] == 1)
+
+# Step 6: Create a solver
+opti.solver('ipopt')
+
+# Step 7: Extract the solver and wrap it in a CasADi Function
+# Define inputs and outputs for the function
+nlp_solver_fn = ca.Function('nlp_solver_fn', [p], [opti.debug.value(x, opti.solve())])
+
+# Usage: Solve for a specific value of p by calling the function
+p_val = 2.0
+sol = nlp_solver_fn(p_val)
+print("Optimal solution:", sol)
