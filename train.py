@@ -41,9 +41,9 @@ import torch as th
 #         return True
 
 # seed_number = 42
-set_random_seed(0)
+# set_random_seed(0)
 
-name = f"previous_model_finetuning"
+name = f"intrinsic_reward_for_seeing_cube"
 run = wandb.init(
     project="Real_Plant_SAC",
     sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
@@ -78,27 +78,18 @@ callback = CheckpointCallback(save_freq=10000, save_path=log_dir, name_prefix="m
 
 policy_kwargs = dict(activation_fn=th.nn.ReLU, net_arch=dict(pi=[64, 64], qf=[800, 600]))
 
-# model = SAC(
-#     saccnn,  # You can replace "MlpPolicy" with your custom policy if needed
-#     my_env,
-#     verbose=1,
-#     policy_kwargs=policy_kwargs,
-#     buffer_size=150000,  # Replay buffer size
-#     gamma=0.9,
-#     device="cuda:0",
-#     tensorboard_log=f"{log_dir}/tensorboard",
-# )
-# model = PPO(
-#     ppocnn,
-#     my_env,
-#     batch_size=256,
-#     gamma=0.9,
-#     ent_coef=0.008,
-#     policy_kwargs=policy_kwargs,
-#     verbose=1,
-#     tensorboard_log=f"{log_dir}/tensorboard",)
+model = SAC(
+    saccnn,  # You can replace "MlpPolicy" with your custom policy if needed
+    my_env,
+    verbose=1,
+    policy_kwargs=policy_kwargs,
+    buffer_size=100000,  # Replay buffer size
+    gamma=0.9,
+    device="cuda:0",
+    tensorboard_log=f"{log_dir}/tensorboard",
+)
 
-model = SAC.load("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/results/SAC_new_bonus_lr_default/mybuddy_policy_checkpoint_1000000_steps.zip", env=my_env, verbose=1)
+# model = SAC.load("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/results/SAC_new_bonus_lr_default/mybuddy_policy_checkpoint_1000000_steps.zip", env=my_env, verbose=1)
 
 model.learn(
     total_timesteps=total_timesteps,

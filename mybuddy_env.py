@@ -142,7 +142,7 @@ class MyBuddyEnv(gym.Env):
         mask = cv2.inRange(hsv, self.lower_green, self.upper_green)
 
         cube_pixels = cv2.countNonZero(mask)
-        normalized_pixels = (cube_pixels) / 2396.0
+        normalized_pixels = (np.maximum(cube_pixels - 500, 0)) / 2396.0
         reward = normalized_pixels * 100
 
         if cube_pixels <= 500:
@@ -151,7 +151,7 @@ class MyBuddyEnv(gym.Env):
         else:
             self.observing_cube = True
             if self.last_pixels < cube_pixels:
-                reward += 50
+                reward += 150
                 self.last_good_actions = action
                 self.last_pixels = cube_pixels
         
