@@ -9,41 +9,23 @@ import wandb
 from wandb.integration.sb3 import WandbCallback
 from stable_baselines3.common.utils import set_random_seed
 import torch as th
+import time
+import argparse
+import os
 
 
-# # Custom Callback for Saving Models
-# class CustomCallback(BaseCallback):
-#     def __init__(self, save_freq: int, save_path: str, verbose=0):
-#         super(CustomCallback, self).__init__(verbose)
-#         self.save_freq = save_freq
-#         self.save_path = save_path
+set_random_seed(42)
+# Argument parsing
+parser = argparse.ArgumentParser()
+parser.add_argument('--run_name', type=str, default="SAC_with_script", help='Name of the run')
+parser.add_argument('--load_model', type=str, help='Path to the model to load', default=None)
+args = parser.parse_args()
 
-#     def _init_callback(self) -> None:
-#         if self.save_path is not None:
-#             os.makedirs(self.save_path, exist_ok=True)
+run_name = args.run_name
+load_model = args.load_model
 
-#     def _on_step(self) -> bool:
-#         if self.n_calls % self.save_freq == 0:
-#             model_path = os.path.join(self.save_path, f"model_{self.n_calls}")
-#             self.model.save(model_path)
-#             if self.verbose > 0:
-#                 print(f"Saving model checkpoint to {model_path}")
 
-#         # Log additional info
-#         if self.locals and 'infos' in self.locals:
-#             infos = self.locals['infos']
-#             if infos and len(infos) > 0:
-#                 current_step = infos[0].get('current_step', 0)
-#                 distance_to_goal = infos[0].get('distance_to_goal', 0)
-#                 self.logger.record('info/current_step', current_step)
-#                 self.logger.record('info/distance_to_goal', distance_to_goal)
-        
-#         return True
-
-# seed_number = 42
-# set_random_seed(0)
-
-name = f"intrinsic_reward_for_seeing_cube"
+name = run_name
 run = wandb.init(
     project="Real_Plant_SAC",
     sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
@@ -64,41 +46,40 @@ CONFIG = {
     "anti_aliasing": 0,
 }
 
-log_dir = f"./results/{name}"
+log_dir = f"./results/SAC_with_script/{name}"
+os.makedirs(log_dir, exist_ok=True)
 
-# set headless to false to visualize training
 my_env = maniEnv(config=CONFIG)
 check_env(my_env)
 my_env = Monitor(my_env)
 
-# policy_kwargs = dict(activation_fn=th.nn.ReLU, net_arch=dict(vf=[128, 128, 128], pi=[128, 128, 128]))
-total_timesteps = 1000000
-
+total_timesteps = 10010
 callback = CheckpointCallback(save_freq=10000, save_path=log_dir, name_prefix="mybuddy_policy_checkpoint")
 
-policy_kwargs = dict(activation_fn=th.nn.ReLU, net_arch=dict(pi=[64, 64], qf=[800, 600]))
+policy_kwargs = dict(activation_fn=th.nn.ReLU, net_arch=dict(pi=[64, 64], qf=[400, 300]))
 
-model = SAC(
-    saccnn,  # You can replace "MlpPolicy" with your custom policy if needed
-    my_env,
-    verbose=1,
-    policy_kwargs=policy_kwargs,
-    buffer_size=100000,  # Replay buffer size
-    gamma=0.9,
-    device="cuda:0",
-    tensorboard_log=f"{log_dir}/tensorboard",
-)
-
-# model = SAC.load("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/results/SAC_new_bonus_lr_default/mybuddy_policy_checkpoint_1000000_steps.zip", env=my_env, verbose=1)
+# Load the model if a path is provided, otherwise create a new model
+if load_model and os.path.exists(load_model):
+    model = SAC.load(load_model, env=my_env, verbose=1)
+    print(f"Loaded model from {load_model}")
+else:
+    model = SAC(
+        saccnn,
+        my_env,
+        verbose=1,
+        policy_kwargs=policy_kwargs,
+        buffer_size=100000,
+        gamma=0.9,
+        device="cuda:0",
+        tensorboard_log=f"{log_dir}/tensorboard",
+    )
 
 model.learn(
     total_timesteps=total_timesteps,
-    callback=[WandbCallback(
+    callback=[callback, WandbCallback(
         gradient_save_freq=100,
         model_save_path=f"{log_dir}/models/{run.id}",
-        verbose=2), callback]
+        verbose=2)],
 )
-
-run.finish()
 
 my_env.close()

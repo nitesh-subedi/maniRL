@@ -82,7 +82,6 @@ class Robot:
                 # print(f'Collision between {collision_mesh[0]} and {collision_mesh[1]}')
                 print(num_hits)
                 return True, False
-
         return False, False
 
     def initialise_control_interface(self):

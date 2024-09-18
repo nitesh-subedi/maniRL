@@ -39,11 +39,11 @@ class SimulationEnv:
         xform = UsdGeom.Xformable(plant)
         xform.ClearXformOpOrder()
         translateOp = xform.AddTranslateOp()
-        translateOp.Set(Gf.Vec3d(0, -0.22, 0.0))
+        translateOp.Set(Gf.Vec3d(0, -0.15, 0.0))
         rotateOp = xform.AddRotateXYZOp()
         rotateOp.Set(Gf.Vec3d(0, 0, 0))
         scaleOp = xform.AddScaleOp()
-        scaleOp.Set(Gf.Vec3d(0.05, 0.05, 0.05))
+        scaleOp.Set(Gf.Vec3d(0.005, 0.005, 0.005))
 
         # Get childerns
         meshes = plant.GetAllChildren()
@@ -121,7 +121,7 @@ class SimulationEnv:
                 prim_path="/goal_cube",
                 name="my_goal_cube",
                 position=np.array([0, -0.4, 0.22]),
-                color=np.array([0, 1.0, 0]),
+                color=np.array([1.0, 0.0, 0]),
                 size=0.08,
             )
         )
