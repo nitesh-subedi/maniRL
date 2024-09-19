@@ -9,7 +9,6 @@ import wandb
 from wandb.integration.sb3 import WandbCallback
 from stable_baselines3.common.utils import set_random_seed
 import torch as th
-import time
 import argparse
 import os
 
@@ -17,8 +16,8 @@ import os
 set_random_seed(42)
 # Argument parsing
 parser = argparse.ArgumentParser()
-parser.add_argument('--run_name', type=str, default="SAC_with_script_testing", help='Name of the run')
-parser.add_argument('--load_model', type=str, help='Path to the model to load', default=None)
+parser.add_argument('--run_name', type=str, default="memory_test_v3", help='Name of the run')
+parser.add_argument('--load_model', type=str, help='Path to the model to load', default="/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/results/SAC_with_script/memory_test_v3/mybuddy_policy_checkpoint_10000_steps.zip")
 args = parser.parse_args()
 
 run_name = args.run_name
@@ -40,7 +39,7 @@ CONFIG = {
     "height": 720,
     "window_width": 1920,
     "window_height": 1080,
-    "headless": True,
+    "headless": False,
     "renderer": "RayTracedLighting",
     "display_options": 3286,  # Set display options to show default grid
     "anti_aliasing": 0,
@@ -53,7 +52,7 @@ my_env = maniEnv(config=CONFIG)
 check_env(my_env)
 my_env = Monitor(my_env)
 
-total_timesteps = 10010
+total_timesteps = 1000000
 callback = CheckpointCallback(save_freq=10000, save_path=log_dir, name_prefix="mybuddy_policy_checkpoint")
 
 policy_kwargs = dict(activation_fn=th.nn.ReLU, net_arch=dict(pi=[64, 64], qf=[400, 300]))

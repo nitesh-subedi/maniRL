@@ -165,7 +165,7 @@ class MyBuddyEnv(gym.Env):
 
         # Normalize cube pixel count
         normalized_cube_pixels = max(cube_pixels, 0) / 2396
-        reward = normalized_cube_pixels * 100 - green_pixels * 0.005
+        reward = normalized_cube_pixels * 100 - green_pixels / 1000
 
         # Reward/punishment based on cube visibility
         if cube_pixels <= 400:
