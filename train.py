@@ -17,7 +17,7 @@ import os
 set_random_seed(42)
 # Argument parsing
 parser = argparse.ArgumentParser()
-parser.add_argument('--run_name', type=str, default="SAC_with_script", help='Name of the run')
+parser.add_argument('--run_name', type=str, default="SAC_with_script_testing", help='Name of the run')
 parser.add_argument('--load_model', type=str, help='Path to the model to load', default=None)
 args = parser.parse_args()
 
@@ -27,7 +27,7 @@ load_model = args.load_model
 
 name = run_name
 run = wandb.init(
-    project="Real_Plant_SAC",
+    project="ENV_SAC",
     sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
     monitor_gym=True,  # auto-upload the videos of agents playing the game
     save_code=False,  # optional

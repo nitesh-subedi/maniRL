@@ -4,9 +4,11 @@ from omni.isaac.sensor import Camera
 import numpy as np
 import omni
 from omni.physx.scripts import deformableUtils, physicsUtils
-from pxr import UsdGeom, Gf, PhysxSchema, UsdPhysics
+from pxr import UsdGeom, Gf, PhysxSchema, UsdPhysics, Sdf
 from omni.isaac.core import PhysicsContext
 from omni.isaac.core.utils.stage import add_reference_to_stage
+import omni.isaac.core.utils.prims as prims_utils
+
 
 
 class SimulationEnv:
@@ -29,10 +31,67 @@ class SimulationEnv:
         scene.CreateGravityDirectionAttr().Set(Gf.Vec3f(0.0, 0.0, 1.0))
         scene.CreateGravityMagnitudeAttr().Set(9.81)
 
-    def initialise(self, usd_path):
+    def initialise(self, usd_path, env_usd, hdr_path):
+        self.make_ground_plane_small()
+        sphere_path = Sdf.Path("/World/defaultGroundPlane/SphereLight")
+        sphere_prim = self.stage.GetPrimAtPath(sphere_path)
+        intensity_attribute = sphere_prim.GetAttribute('intensity')
+        intensity_attribute.Set(0.0)
+        self.import_lighting(hdr_path)
+        self.import_environment(env_usd)
         self.import_plant_mesh(usd_path)
         self.add_goal_cube()
         self.add_camera()
+    
+
+    def make_ground_plane_small(self):
+        path = Sdf.Path("/World/defaultGroundPlane")
+        prim = self.stage.GetPrimAtPath(path)
+        xform = UsdGeom.Xformable(prim)
+        xform.ClearXformOpOrder()
+        translateOp = xform.AddTranslateOp()
+        translateOp.Set(Gf.Vec3d(0.0, 0.0, 0.0))
+        rotateOp = xform.AddRotateXYZOp()
+        rotateOp.Set(Gf.Vec3d(0.0, 0.0, 0.0))
+        scaleOps = xform.GetOrderedXformOps()
+        scaleOp = None
+        for op in scaleOps:
+            if op.GetOpType() == UsdGeom.XformOp.TypeScale:
+                scaleOp = op
+                break
+
+        # If scaleOp exists, use it; otherwise, create a new one.
+        if not scaleOp:
+            scaleOp = xform.AddScaleOp(UsdGeom.XformOp.PrecisionDouble)  # Ensure using double precision
+
+        # Set the scale
+        scaleOp.Set(Gf.Vec3d(0.007, 0.007, 0.007))
+
+    
+    def import_lighting(self, hdr_path:str):
+        dome_light = prims_utils.create_prim(
+            "/World/Dome_light",
+            "DomeLight",
+            # position=np.array([1.0, 1.0, 1.0]),
+            attributes={
+                "inputs:texture:file": hdr_path,
+                "inputs:intensity": 1000,
+                "inputs:exposure": 1.0,
+            }
+        )
+
+    
+    def import_environment(self, usd_path):
+        field = add_reference_to_stage(usd_path=usd_path, prim_path="/Field")
+        xform = UsdGeom.Xformable(field)
+        xform.ClearXformOpOrder()
+        translateOp = xform.AddTranslateOp()
+        translateOp.Set(Gf.Vec3d(0, 0, 0.01))
+        rotateOp = xform.AddRotateXYZOp()
+        rotateOp.Set(Gf.Vec3d(0, 0, 0))
+        scaleOp = xform.AddScaleOp()
+        scaleOp.Set(Gf.Vec3d(0.01, 0.01, 0.01))
+
 
     def import_plant_mesh(self, usd_path):
         plant = add_reference_to_stage(usd_path=usd_path, prim_path="/Plant")
@@ -43,7 +102,7 @@ class SimulationEnv:
         rotateOp = xform.AddRotateXYZOp()
         rotateOp.Set(Gf.Vec3d(0, 0, 0))
         scaleOp = xform.AddScaleOp()
-        scaleOp.Set(Gf.Vec3d(0.005, 0.005, 0.005))
+        scaleOp.Set(Gf.Vec3d(0.05, 0.05, 0.05))
 
         # Get childerns
         meshes = plant.GetAllChildren()
@@ -77,19 +136,6 @@ class SimulationEnv:
                 self_collision=False,
             )
 
-        # self.deformable_cylinder_material_path = omni.usd.get_stage_next_free_path(self.stage, "/cylinder1", True)
-        # deformableUtils.add_deformable_body_material(
-        #     self.stage,
-        #     self.deformable_cylinder_material_path,
-        #     youngs_modulus=2e7,
-        #     poissons_ratio=0.15,
-        #     damping_scale=0.0,
-        #     dynamic_friction=0.5,
-        #     density=1000
-        # )
-
-        # physicsUtils.add_physics_material_to_prim(self.stage, self.cylinder_mesh.GetPrim(),
-        #                                           self.deformable_cylinder_material_path)
 
     def attach_cylinder_to_ground(self, prim_dict):
         key, value = list(prim_dict.items())[0]

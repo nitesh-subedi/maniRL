@@ -39,7 +39,9 @@ class MyBuddyEnv(gym.Env):
         # Import world
         from world.world import SimulationEnv
         self.world = SimulationEnv(config={"physics_dt": physics_dt, "rendering_dt": rendering_dt})
-        self.world.initialise(usd_path="omniverse://localhost/Users/nitesh/plant_v19/plant_v19.usd")
+        self.world.initialise(usd_path="omniverse://localhost/Users/nitesh/plant_v21/plant_v21.usd", 
+                              env_usd = "omniverse://localhost/Users/nitesh/env_v2/environment.usd",
+                              hdr_path="omniverse://localhost/Users/nitesh/env_v2/textures/rosendal_plains_2_4k.hdr")
 
         from mybuddy.robot import Robot
         self.robot = Robot(
@@ -62,12 +64,12 @@ class MyBuddyEnv(gym.Env):
             dtype=np.uint8
         )
         self.last_angles = np.zeros(6)
-        # Define the range for green color
-        self.lower_red1 = np.array([0, 120, 70])    # Lower bound for the first red range
-        self.upper_red1 = np.array([10, 255, 255])  # Upper bound for the first red range
 
-        self.lower_red2 = np.array([170, 120, 70])  # Lower bound for the second red range
-        self.upper_red2 = np.array([180, 255, 255]) # Upper bound for the second red range
+        self.lower_red = np.array([90, 50, 50])
+        self.upper_red = np.array([130, 255, 255])
+
+        self.lower_green = np.array([35, 40, 40])
+        self.upper_green = np.array([85, 255, 255])
 
         self.episode_length = 0
         self.initial_angles = np.deg2rad([0, -110, 120, -120, -95, 0])
@@ -141,41 +143,31 @@ class MyBuddyEnv(gym.Env):
         return image
 
     def get_reward(self, obs, collision, action):
-        camera_frame = obs
+        
         # Convert the image to HSV color space
-        hsv = cv2.cvtColor(camera_frame, cv2.COLOR_BGR2HSV)
+        hsv = cv2.cvtColor(obs, cv2.COLOR_BGR2HSV)
 
-        # Create a mask for red color
-        mask1 = cv2.inRange(hsv, self.lower_red1, self.upper_red1)
-        mask2 = cv2.inRange(hsv, self.lower_red2, self.upper_red2)
-        mask = mask1 + mask2
+        # Crop image to focus on the cube, the cube is located at the center of the image
+        cube_hsv = hsv.copy()[90:140, 100:150]
 
-        cube_pixels = cv2.countNonZero(mask)
-        normalized_pixels = (np.maximum(cube_pixels - 500, 0)) / (2396 - 500)
-        reward = normalized_pixels * 100
+        # Create masks for the red cube and green plant
+        cube_mask = cv2.inRange(cube_hsv, self.lower_red, self.upper_red)
+        plant_mask = cv2.inRange(hsv, self.lower_green, self.upper_green)
 
-        contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        if len(contours) > 0:
-            largest_contour = max(contours, key=cv2.contourArea)
-            contour_area = cv2.contourArea(largest_contour)
-            if contour_area > 500:  # Minimum area threshold
-                reward += contour_area * 0.05  # Small reward for seeing the cube clearly
+        if time.time() - self.tic > 10:
+            self.tic = time.time()
+            cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image_cube.jpg", cv2.bitwise_and(obs[90:140, 100:150], obs[90:140, 100:150], mask=cube_mask))
+            cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image_plant.jpg", plant_mask)
+        
+        # Count non-zero pixels for cube and plant
+        cube_pixels = cv2.countNonZero(cube_mask)
+        green_pixels = cv2.countNonZero(plant_mask)
 
-        # # Step 3: Extract the green channel (from the original image, not HSV)
-        # green_channel = camera_frame[:, :, 1]  # Green channel in BGR
+        # Normalize cube pixel count
+        normalized_cube_pixels = max(cube_pixels, 0) / 2396
+        reward = normalized_cube_pixels * 100 - green_pixels * 0.005
 
-        # # Step 4: Apply FFT on the green channel
-        # fft_green = np.fft.fft2(green_channel)
-
-        # # Step 5: Shift the zero frequency component to the center
-        # fft_green_shifted = np.fft.fftshift(fft_green)
-
-        # # Step 6: Compute the magnitude spectrum
-        # magnitude_spectrum = np.abs(fft_green_shifted)
-        # if self.previous_magnitude_spectrum is not None:
-        #     reward = -np.linalg.norm(magnitude_spectrum - self.previous_magnitude_spectrum)
-
-
+        # Reward/punishment based on cube visibility
         if cube_pixels <= 400:
             reward -= 5
             self.observing_cube = False
@@ -185,21 +177,18 @@ class MyBuddyEnv(gym.Env):
                 reward += 150
                 self.last_good_actions = action
                 self.last_pixels = cube_pixels
-        
 
+        # Penalize collision
         if collision:
             reward -= 20
 
-        if not (self.last_good_actions[:5] == self.initial_angles[:5]).any() and not self.observing_cube:
-            # Decay the intrinsic reward if the action hasn't changed much over time
+        # Intrinsic reward decay
+        if not np.allclose(self.last_good_actions[:5], self.initial_angles[:5]) and not self.observing_cube:
             stagnation_penalty = np.exp(-np.linalg.norm(action - self.last_good_actions)) * 10
             reward -= stagnation_penalty
 
-        
-        reward += 1
-        # self.previous_magnitude_spectrum = magnitude_spectrum
+        return reward + 0.1, cube_pixels
 
-        return reward, cube_pixels
 
     def is_truncated(self):
         if self.world._world.current_time_step_index - self._steps_after_reset >= self._max_episode_length:
@@ -280,9 +269,9 @@ class MyBuddyEnv(gym.Env):
         smoothed_bonus = np.sqrt(np.log(1 + self.total_visits) / (1 + (0.9 * pseudo_count + 0.1 * pseudo_count)))
         self.total_visits += 1
 
-        if time.time() - self.tic > 5:
-            self.tic = time.time()
-            print(f"Exploration Bonus: {smoothed_bonus}")
+        # if time.time() - self.tic > 5:
+        #     self.tic = time.time()
+        #     print(f"Exploration Bonus: {smoothed_bonus}")
         return smoothed_bonus
 
     def state_abstraction(self, obs):

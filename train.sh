@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define base log directory
-base_name="SAC_with_script_improved_reward"
+base_name="ENV_added_with_hdr"
 
 # Specify the full path to your Python interpreter
 python_interpreter="/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/python.sh"
