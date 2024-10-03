@@ -4,3 +4,4 @@ idea
 __pycache__/
 wandb/
 images/
+real_env_results/

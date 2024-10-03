@@ -27,6 +27,5 @@ services:
       - ~/docker/isaac-sim/data:/root/.local/share/ov/data:rw
       - ~/docker/isaac-sim/documents:/root/Documents:rw
       - ../maniRL:/isaac-sim/maniRL:rw
-    stdin_open: true
-    entrypoint: bash
-    command: ls
+
+    command: cd maniRL && ../python.sh train.py
