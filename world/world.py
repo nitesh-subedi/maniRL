@@ -181,7 +181,7 @@ class SimulationEnv:
         )
         self.camera.initialize()
         self.camera.set_focal_length(1.58)
-        self.camera.set_clipping_range(0.1, 1000000.0)
+        self.camera.set_clipping_range(0.01, 1000000.0)
 
         self.camera_prim = self.stage.GetPrimAtPath("/World/camera")
         # Ensure the camera prim is valid
@@ -206,9 +206,47 @@ class SimulationEnv:
 
         # Set the orientation attribute
         orient_attr.Set(quaternion)
+    
+    def add_ee_camera(self):
+        self.ee_camera = Camera(
+            prim_path="/mybuddy/left_arm_l6/ee_camera",
+            translation=np.array([0.0, 0.0, 0.04]),
+            frequency=20,
+            resolution=(256, 256),
+        )
+        self.ee_camera.initialize()
+        self.ee_camera.set_focal_length(1.58)
+        self.ee_camera.set_clipping_range(0.01, 1000000.0)
+
+        self.ee_camera_prim = self.stage.GetPrimAtPath("/mybuddy/left_arm_l6/ee_camera")
+        # Ensure the camera prim is valid
+        if not self.ee_camera_prim:
+            raise ValueError("Camera prim does not exist at the specified path.")
+
+        # Add the orientation attribute if it doesn't exist
+        xform = UsdGeom.Xformable(self.ee_camera_prim)
+        if not xform.GetXformOpOrderAttr().IsValid():
+            xform.AddOrientOp()
+
+        # Get the orientation attribute
+        orient_attr = self.ee_camera_prim.GetAttribute("xformOp:orient")
+        # Define the quaternion components
+        w = 0.00
+        x = 0.0
+        y = 1.0
+        z = 0.0
+
+        # Create the quaternion using Gf.Quatd
+        quaternion = Gf.Quatd(w, Gf.Vec3d(x, y, z))
+
+        # Set the orientation attribute
+        orient_attr.Set(quaternion)
 
     def get_image(self):
         return self.camera.get_rgba()[:, :, :3]
+    
+    def get_ee_image(self):
+        return self.ee_camera.get_rgba()[:, :, :3]
 
     @property
     def world(self):

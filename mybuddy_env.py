@@ -6,6 +6,8 @@ from isaacsim import SimulationApp
 from scipy.spatial import distance
 import time
 from collections import deque
+from PIL import Image
+import imagehash
 import gc
 import torch
 
@@ -45,6 +47,9 @@ class MyBuddyEnv(gym.Env):
         self.robot = Robot(
             urdf_path="/home/nitesh/workspace/rosws/mybuddy_robot_rl/src/mybuddy_description/urdf/urdf.urdf",
             world=self.world.world, simulation_app=self._simulation_app)
+        
+        # Attach ee camera to the robot
+        self.world.add_ee_camera()
 
         import omni
         omni.timeline.get_timeline_interface().play()
@@ -58,21 +63,9 @@ class MyBuddyEnv(gym.Env):
         self.observation_space = spaces.Box(
             low=0,
             high=255,
-            shape=(256, 256, 3),
+            shape=(256, 256, 6),
             dtype=np.uint8
         )
-        self.goal_space = spaces.Box(
-            low=0,
-            high=255,
-            shape=(256, 256, 3),
-            dtype=np.uint8
-        )
-
-        self.observation_space = spaces.Dict({
-            'observation': self.observation_space,
-            'desired_goal': self.goal_space,
-            'achieved_goal': self.goal_space
-        })
 
         self.last_angles = np.zeros(6)
 
@@ -98,23 +91,10 @@ class MyBuddyEnv(gym.Env):
         self.cube_pixels = 0
         self.previous_magnitude_spectrum = None
         self.orb = cv2.ORB_create()
-        obs = self.get_observation()
-        # Convert the image to HSV color space
-        hsv = cv2.cvtColor(obs, cv2.COLOR_BGR2HSV)
-
-        # Create masks for the red cube and green plant
-        plant_mask = cv2.inRange(hsv, self.lower_green, self.upper_green)
-        
-        # Count non-zero pixels for cube and plant
-        self.init_green_pixels = cv2.countNonZero(plant_mask)
-        action = [-90, 30, 130,-120, 0, 0]
-        self.robot.send_angles(0, action, degrees=True)
-        for i in range(100):
-            self.world._world.step()
-        self.goal_image = self.get_observation()
-        # save image
-        cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image_goal.jpg", self.goal_image)
-
+        self.world._world.render()
+        self.world._world.render()
+        self.world._world.render()
+        cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image_ee.jpg", self.world.get_ee_image())
 
     def step(self, action):
         # if time.time() - self.tic > 3:
@@ -135,92 +115,102 @@ class MyBuddyEnv(gym.Env):
         collision, end_effector_collision = self.robot.check_collision()
         self.last_angles = action
         obs = self.get_observation()
-        reward = self.compute_reward(obs, self.goal_image, {})
-        # intrinsic_reward = self.get_intrinsic_reward(action)
+        reward, self.cube_pixels = self.get_reward(obs, collision, action)
+        intrinsic_reward = self.get_intrinsic_reward(action)
+        # intrinsic_reward = 0
+        # if not self.observing_cube:
+        #     intrinsic_reward = self.get_intrinsic_reward(action)
         # exploration_bonus = self.get_exploration_bonus(obs)
+        # if time.time() - self.tic > 5:
+        #     self.tic = time.time()
+        #     print(f"Exploration Bonus: {exploration_bonus}")
 
         # Combine rewards
-        total_reward = reward #+ intrinsic_reward * 0.3 + exploration_bonus * 0.1
-        # if end_effector_collision:
-        #     total_reward -= 20
+        total_reward = reward * 0.6 + intrinsic_reward * 0.3 #+ exploration_bonus * 0.1
+        if end_effector_collision:
+            total_reward -= 20
 
-        done = self.get_done(collision)
+        done = self.get_done(collision, self.cube_pixels)
         self.episode_length += 1
         truncated = self.is_truncated()
 
-        return {
-            'observation': obs,
-            'desired_goal': self.goal_image,
-            'achieved_goal': obs.copy()
-        }, float(total_reward), done, truncated, {}
+        return np.concatenate([obs[0], obs[1]], axis=-1), float(total_reward), done, truncated, {}
 
     @staticmethod
-    def get_done(collision):
+    def get_done(collision, cube_pixels):
         if collision:
             return True
+        # if cube_pixels > 2000:
+        #     return True
         return False
 
     def get_observation(self):
         image = self.world.get_image()
         image = cv2.resize(image, (256, 256))
-
-        return image
+        ee_image = self.world.get_ee_image()
+        ee_image = cv2.resize(ee_image, (256, 256))
+        if time.time() - self.tic > 10:
+            self.tic = time.time()
+            cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image.jpg", image)
+            cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image_ee.jpg", ee_image)
+        # Stack images with shape (2, 256, 256, 3)
+        return np.stack([image, ee_image], axis=0)
 
     def get_reward(self, obs, collision, action):
-        
-        # Convert the image to HSV color space
-        hsv = cv2.cvtColor(obs, cv2.COLOR_BGR2HSV)
+        # Initialize variables for cube and plant pixel counts across both images
+        total_cube_pixels = 0
+        total_green_pixels = 0
+        reward = 0
 
-        # Crop image to focus on the cube, the cube is located at the center of the image
-        cube_hsv = hsv.copy()[90:140, 100:150]
+        # Process each image in the observation (obs[0] and obs[1])
+        for i in range(2):
+            # Convert the image to HSV color space
+            hsv = cv2.cvtColor(obs[i], cv2.COLOR_BGR2HSV)
+            if i == 1:
+                cube_hsv = hsv.copy()
+            # Crop image to focus on the cube (assuming the cube is at the center in both images)
+            else:
+                cube_hsv = hsv.copy()[90:140, 100:150]
+            
+            # Create masks for the red cube and green plant
+            cube_mask = cv2.inRange(cube_hsv, self.lower_red, self.upper_red)
+            plant_mask = cv2.inRange(hsv, self.lower_green, self.upper_green)
+            
+            # Count non-zero pixels for the cube and plant
+            cube_pixels = cv2.countNonZero(cube_mask)
+            green_pixels = cv2.countNonZero(plant_mask)
+            
+            # Accumulate pixel counts across both images
+            total_cube_pixels += cube_pixels
+            total_green_pixels += green_pixels
 
-        # Create masks for the red cube and green plant
-        cube_mask = cv2.inRange(cube_hsv, self.lower_red, self.upper_red)
-        # plant_mask = cv2.inRange(hsv, self.lower_green, self.upper_green)
+            # Normalize the cube pixel count (assuming the same maximum pixel count for both images)
+            normalized_cube_pixels = max(cube_pixels, 0) / 2396
+            reward += normalized_cube_pixels * 100 - green_pixels / 1000
 
-        # if time.time() - self.tic > 10:
-        #     self.tic = time.time()
-        #     cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image_cube.jpg", cv2.bitwise_and(obs[90:140, 100:150], obs[90:140, 100:150], mask=cube_mask))
-        #     cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image_plant.jpg", plant_mask)
-        
-        # Count non-zero pixels for cube and plant
-        cube_pixels = cv2.countNonZero(cube_mask)
-        if cube_pixels > 2000:
-            reward = 1
-        else:
-            reward = 0
-        # green_pixels = cv2.countNonZero(plant_mask)
-        # reward = ((green_pixels - self.init_green_pixels) / self.init_green_pixels) * 100
-        # if green_pixels < self.init_green_pixels:
-        #     self.init_green_pixels = green_pixels
-        # Normalize cube pixel count
-        # normalized_cube_pixels = max(cube_pixels, 0) / 2396
-        
-        # if time.time() - self.tic > 5:
-        #     self.tic = time.time()
-        #     print(f"Reward: {reward}")
+            # Reward/punishment based on cube visibility
+            if cube_pixels <= 400:
+                reward -= 5
+                self.observing_cube = False
+            else:
+                self.observing_cube = True
+                if self.last_pixels < total_cube_pixels:
+                    reward += 150
+                    self.last_good_actions = action
+                    self.last_pixels = total_cube_pixels
 
-        # # Reward/punishment based on cube visibility
-        # if cube_pixels <= 400:
-        #     reward -= 5
-        #     self.observing_cube = False
-        # else:
-        #     self.observing_cube = True
-        #     if self.last_pixels < cube_pixels:
-        #         reward += 150
-        #         self.last_good_actions = action
-        #         self.last_pixels = cube_pixels
+        # Penalize collision (applied once for both images)
+        if collision:
+            reward -= 20
 
-        # Penalize collision
-        # if collision:
-        #     reward -= 50
+        # Intrinsic reward decay (applied once for both images)
+        if not np.allclose(self.last_good_actions[:5], self.initial_angles[:5]) and not self.observing_cube:
+            stagnation_penalty = np.exp(-np.linalg.norm(action - self.last_good_actions)) * 10
+            reward -= stagnation_penalty
 
-        # Intrinsic reward decay
-        # if not np.allclose(self.last_good_actions[:5], self.initial_angles[:5]) and not self.observing_cube:
-        #     stagnation_penalty = np.exp(-np.linalg.norm(action - self.last_good_actions)) * 10
-        #     reward -= stagnation_penalty
+        # Return reward and total cube pixel count across both images
+        return reward + 0.1, total_cube_pixels
 
-        return reward
 
 
     def is_truncated(self):
@@ -246,34 +236,8 @@ class MyBuddyEnv(gym.Env):
         self.w = {}
         self.observing_cube = False
         self.total_visits = 0
-        return {
-            'observation': self.get_observation(),
-            'desired_goal': self.goal_image,
-            'achieved_goal': self.get_observation().copy()}, {}
-    
-    def compute_reward(self, achieved_goal, desired_goal, info):
-        """
-        Compute the reward based on the achieved_goal and desired_goal.
-        Handle both single and batch computation by checking the input shape.
-        """
-        # Convert to float to prevent overflow
-        achieved_goal = achieved_goal.astype(np.float32)
-        desired_goal = desired_goal.astype(np.float32)
-
-        if achieved_goal.ndim == 3:  # Single goal (no batch dimension)
-            distance = np.sum(np.abs(achieved_goal - desired_goal))
-            if distance == 0:
-                reward = 1  # Reward for achieving the goal
-            else:
-                reward = -distance / (3 * 256 * 256 * 255)  # Negative reward based on distance
-
-        else:  # Batch computation
-            distance = np.sum(np.abs(achieved_goal - desired_goal), axis=(1, 2, 3))
-            reward = np.where(distance == 0, 1, -distance / (3 * 256 * 256 * 255))
-        if time.time() - self.tic > 5:
-            self.tic = time.time()
-            print(f"Reward: {reward}")
-        return reward
+        obs = self.get_observation()
+        return np.concatenate([obs[0], obs[1]], axis=-1), {}
 
     def render(self, mode="human"):
         pass
