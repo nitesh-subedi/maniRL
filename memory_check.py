@@ -1,34 +1,17 @@
-import psutil
-import time
+from ultralytics import SAM, YOLO
+import cv2
 
-# Parameters
-CHECK_INTERVAL = 1  # in seconds
-SPIKE_THRESHOLD = 5  # percent increase that constitutes a spike
+# Load a model
+model = YOLO("yolo11n.pt")
 
-def get_memory_usage():
-    """Return memory usage in percentage."""
-    return psutil.virtual_memory().percent
+# Display model information (optional)
+model.info()
 
-def detect_memory_spike(prev_usage, current_usage, threshold):
-    """Detect if there is a memory usage spike."""
-    if prev_usage == 0:
-        return False
-    increase = ((current_usage - prev_usage) / prev_usage) * 100
-    return increase >= threshold
+# Run inference with bboxes prompt
+# results = model("ultralytics/assets/zidane.jpg", bboxes=[439, 437, 524, 709])
+image_path = "/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image_goal.jpg"
+image = cv2.imread(image_path)
 
-def main():
-    previous_usage = get_memory_usage()
-    print(f"Initial memory usage: {previous_usage:.2f}%")
-    
-    while True:
-        time.sleep(CHECK_INTERVAL)
-        current_usage = get_memory_usage()
-        
-        if detect_memory_spike(previous_usage, current_usage, SPIKE_THRESHOLD):
-            print(f"Memory spike detected! Current usage: {current_usage:.2f}% (Prev: {previous_usage:.2f}%)")
-        
-        # Update the previous usage for the next check
-        previous_usage = current_usage
-
-if __name__ == "__main__":
-    main()
+# Run inference with points prompt
+results = model(image_path, save=True)
+# print(results[0])

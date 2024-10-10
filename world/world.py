@@ -167,7 +167,7 @@ class SimulationEnv:
                 prim_path="/goal_cube",
                 name="my_goal_cube",
                 position=np.array([0, -0.4, 0.22]),
-                color=np.array([1.0, 0.0, 0]),
+                color=np.array([1.0, 0.0, 0.0]),
                 size=0.08,
             )
         )

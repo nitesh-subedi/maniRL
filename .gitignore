@@ -5,3 +5,4 @@ __pycache__/
 wandb/
 images/
 real_env_results/
+new_obs_results/

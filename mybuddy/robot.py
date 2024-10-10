@@ -58,6 +58,7 @@ class Robot:
         self.collision_checker_interface = omni.physx.get_physx_scene_query_interface()
         self.collision_meshes_for_checking = []
         self.initialise_collision_api()
+        self.ee_dc=self.dc.get_rigid_body("/mybuddy/left_arm_l6")
 
     @staticmethod
     def on_hit(hit):
@@ -124,3 +125,6 @@ class Robot:
 
         else:
             raise ValueError("Invalid arm index. Please provide 0 for left arm and 1 for right arm.")
+    
+    def get_ee_position(self):
+        return self.dc.get_rigid_body_pose(self.ee_dc).p

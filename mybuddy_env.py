@@ -7,9 +7,10 @@ from scipy.spatial import distance
 import time
 from collections import deque
 from PIL import Image
-import imagehash
+import sys
 import gc
 import torch
+from mybuddy.utils import DepthEstimator
 
 
 
@@ -22,6 +23,7 @@ class MyBuddyEnv(gym.Env):
                  seed=0,
                  config={"headless": True, "anti_aliasing": 1}) -> None:
         super().__init__()
+        self.depth_estimator = DepthEstimator()
         self._simulation_app = SimulationApp(launch_config=config)
         self._simulation_app.set_setting("/app/window/drawMouse", True)
         self._simulation_app.set_setting("/app/livestream/proto", "ws")
@@ -47,9 +49,6 @@ class MyBuddyEnv(gym.Env):
         self.robot = Robot(
             urdf_path="/home/nitesh/workspace/rosws/mybuddy_robot_rl/src/mybuddy_description/urdf/urdf.urdf",
             world=self.world.world, simulation_app=self._simulation_app)
-        
-        # Attach ee camera to the robot
-        self.world.add_ee_camera()
 
         import omni
         omni.timeline.get_timeline_interface().play()
@@ -60,13 +59,25 @@ class MyBuddyEnv(gym.Env):
         self._simulation_app.update()
 
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(5,), dtype=np.float32)
-        self.observation_space = spaces.Box(
+        image_obs_space = spaces.Box(
             low=0,
             high=255,
-            shape=(256, 256, 6),
+            shape=(256, 256, 3),
             dtype=np.uint8
         )
 
+        # Define the end-effector position space (3 values: x, y, z)
+        end_effector_space = spaces.Box(
+            low=np.array([-2.0, -2.0, -2.0]),
+            high=np.array([2.0, 2.0, 2.0]),
+            dtype=np.float64
+        )
+
+        # Combine both spaces using Tuple or Dict (depending on your needs)
+        self.observation_space = spaces.Dict({
+            'image': image_obs_space,
+            'end_effector_pos': end_effector_space
+        })
         self.last_angles = np.zeros(6)
 
         self.lower_red = np.array([90, 50, 50])
@@ -77,33 +88,22 @@ class MyBuddyEnv(gym.Env):
 
         self.episode_length = 0
         self.initial_angles = np.deg2rad([0, -110, 120, -120, -95, 0])
-        # Initialize parameters for EXPLORS
-        self.w = {}  # Initialize state visitation counts for exploration bonus
+        # # Initialize parameters for EXPLORS
+        # self.w = {}  # Initialize state visitation counts for exploration bonus
 
-        # Initialize list to store previous actions for intrinsic reward calculation
+        # # Initialize list to store previous actions for intrinsic reward calculation
         max_length = 1000
         self.previous_actions = deque(maxlen=max_length)
-        self.last_good_actions = self.initial_angles
-        self.last_pixels = 0
-        self.observing_cube = False
+        # self.last_good_actions = self.initial_angles
+        # self.last_pixels = 0
+        # self.observing_cube = False
         self.tic = time.time()
-        self.total_visits = 0
-        self.cube_pixels = 0
-        self.previous_magnitude_spectrum = None
-        self.orb = cv2.ORB_create()
-        self.world._world.render()
-        self.world._world.render()
-        self.world._world.render()
-        cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image_ee.jpg", self.world.get_ee_image())
+        # self.total_visits = 0
+        # self.previous_magnitude_spectrum = None
+        
 
     def step(self, action):
-        # if time.time() - self.tic > 3:
-        #     self.world.goal_cube.set_world_pose([np.random.uniform(-0.06, 0.06), -0.4, 0.22], [0, 0, 0, 1])
-        #     self.tic = time.time()
         action = np.clip(action, -1.0, 1.0)
-        # if self.cube_pixels > 2000:
-        #     action = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-        # else:
         if self.observing_cube:
             action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.05
         else:
@@ -115,102 +115,54 @@ class MyBuddyEnv(gym.Env):
         collision, end_effector_collision = self.robot.check_collision()
         self.last_angles = action
         obs = self.get_observation()
-        reward, self.cube_pixels = self.get_reward(obs, collision, action)
-        intrinsic_reward = self.get_intrinsic_reward(action)
-        # intrinsic_reward = 0
-        # if not self.observing_cube:
-        #     intrinsic_reward = self.get_intrinsic_reward(action)
-        # exploration_bonus = self.get_exploration_bonus(obs)
-        # if time.time() - self.tic > 5:
-        #     self.tic = time.time()
-        #     print(f"Exploration Bonus: {exploration_bonus}")
-
+        ee_location = np.array(self.robot.get_ee_position())
+        # print(f"EE Location: {ee_location}")
+        reward = self.get_reward(obs, collision, ee_location)
+        int_reward = self.get_intrinsic_reward(action)
         # Combine rewards
-        total_reward = reward * 0.6 + intrinsic_reward * 0.3 #+ exploration_bonus * 0.1
+        total_reward = reward + int_reward
         if end_effector_collision:
-            total_reward -= 20
+            total_reward -= 2
 
-        done = self.get_done(collision, self.cube_pixels)
+        done = self.get_done(collision)
         self.episode_length += 1
         truncated = self.is_truncated()
-
-        return np.concatenate([obs[0], obs[1]], axis=-1), float(total_reward), done, truncated, {}
+        observation = {
+            'image': obs,
+            'end_effector_pos': ee_location
+        }
+        return observation, float(total_reward), done, truncated, {}
 
     @staticmethod
-    def get_done(collision, cube_pixels):
+    def get_done(collision):
         if collision:
             return True
-        # if cube_pixels > 2000:
-        #     return True
         return False
 
     def get_observation(self):
         image = self.world.get_image()
         image = cv2.resize(image, (256, 256))
-        ee_image = self.world.get_ee_image()
-        ee_image = cv2.resize(ee_image, (256, 256))
-        if time.time() - self.tic > 10:
+
+        return image
+
+    def get_reward(self, obs, collision, ee_location):
+        # Compute reward based on the observation
+        unwanted_pixels, result = self.depth_estimator.remove_nearest_objects(obs)
+        if time.time() - self.tic > 5:
             self.tic = time.time()
-            cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image.jpg", image)
-            cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image_ee.jpg", ee_image)
-        # Stack images with shape (2, 256, 256, 3)
-        return np.stack([image, ee_image], axis=0)
+            cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image_goal_output.jpg", result)
+        # More reward if less unwanted pixels
+        reward = - (unwanted_pixels / 60000) * 10
 
-    def get_reward(self, obs, collision, action):
-        # Initialize variables for cube and plant pixel counts across both images
-        total_cube_pixels = 0
-        total_green_pixels = 0
-        reward = 0
+        # goal_location = np.array([0, -0.6])
+        # # More reward if closer to goal
+        # reward -= np.linalg.norm(ee_location[:2] - goal_location) * 10
 
-        # Process each image in the observation (obs[0] and obs[1])
-        for i in range(2):
-            # Convert the image to HSV color space
-            hsv = cv2.cvtColor(obs[i], cv2.COLOR_BGR2HSV)
-            if i == 1:
-                cube_hsv = hsv.copy()
-            # Crop image to focus on the cube (assuming the cube is at the center in both images)
-            else:
-                cube_hsv = hsv.copy()[90:140, 100:150]
-            
-            # Create masks for the red cube and green plant
-            cube_mask = cv2.inRange(cube_hsv, self.lower_red, self.upper_red)
-            plant_mask = cv2.inRange(hsv, self.lower_green, self.upper_green)
-            
-            # Count non-zero pixels for the cube and plant
-            cube_pixels = cv2.countNonZero(cube_mask)
-            green_pixels = cv2.countNonZero(plant_mask)
-            
-            # Accumulate pixel counts across both images
-            total_cube_pixels += cube_pixels
-            total_green_pixels += green_pixels
-
-            # Normalize the cube pixel count (assuming the same maximum pixel count for both images)
-            normalized_cube_pixels = max(cube_pixels, 0) / 2396
-            reward += normalized_cube_pixels * 100 - green_pixels / 1000
-
-            # Reward/punishment based on cube visibility
-            if cube_pixels <= 400:
-                reward -= 5
-                self.observing_cube = False
-            else:
-                self.observing_cube = True
-                if self.last_pixels < total_cube_pixels:
-                    reward += 150
-                    self.last_good_actions = action
-                    self.last_pixels = total_cube_pixels
-
-        # Penalize collision (applied once for both images)
+        # Penalize collision
         if collision:
             reward -= 20
 
-        # Intrinsic reward decay (applied once for both images)
-        if not np.allclose(self.last_good_actions[:5], self.initial_angles[:5]) and not self.observing_cube:
-            stagnation_penalty = np.exp(-np.linalg.norm(action - self.last_good_actions)) * 10
-            reward -= stagnation_penalty
-
-        # Return reward and total cube pixel count across both images
-        return reward + 0.1, total_cube_pixels
-
+        return reward + 0.1
 
 
     def is_truncated(self):
@@ -236,8 +188,12 @@ class MyBuddyEnv(gym.Env):
         self.w = {}
         self.observing_cube = False
         self.total_visits = 0
-        obs = self.get_observation()
-        return np.concatenate([obs[0], obs[1]], axis=-1), {}
+        ee_location = np.array(self.robot.get_ee_position())
+        observation = {
+            'image': self.get_observation(),
+            'end_effector_pos': ee_location
+        }
+        return observation, {}
 
     def render(self, mode="human"):
         pass
@@ -251,22 +207,31 @@ class MyBuddyEnv(gym.Env):
         return [seed]
 
     def get_intrinsic_reward(self, action):
-        # Compute intrinsic reward based on action novelty
-        decay_factor = 0.9
+        decay_factor = 0.99
 
         if not self.previous_actions:
-            intrinsic_reward = 0.1
+            intrinsic_reward = 10.0
         else:
-            weighted_distances = []
-            for i, prev_action in enumerate(self.previous_actions):
-                weight = decay_factor ** (len(self.previous_actions) - i - 1)
-                distance_to_prev_action = distance.euclidean(action, prev_action)
-                weighted_distances.append(weight * distance_to_prev_action)
+            prev_actions = np.array(self.previous_actions)
+            
+            # Compute Euclidean distances between the current action and all previous actions
+            distances = np.linalg.norm(prev_actions - action, axis=1)
+            
+            # Generate decay weights for all previous actions
+            weights = decay_factor ** np.arange(len(self.previous_actions) - 1, -1, -1)
+            
+            # Compute weighted distances
+            weighted_distances = weights * distances
+            
+            # Find the minimum weighted distance
+            min_weighted_distance = np.min(weighted_distances)
+            
+            # Compute intrinsic reward
+            intrinsic_reward = 1.0 / (1.0 + min_weighted_distance) * 10.0
 
-            min_weighted_distance = min(weighted_distances)
-            intrinsic_reward = 1.0 / (1.0 + min_weighted_distance) * 0.1
-
+        # Append current action to previous actions
         self.previous_actions.append(action)
+        
         return intrinsic_reward
 
     def get_exploration_bonus(self, obs):
