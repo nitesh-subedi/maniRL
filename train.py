@@ -1,7 +1,5 @@
 from mybuddy_env import MyBuddyEnv as maniEnv
-from stable_baselines3 import SAC, PPO
-from stable_baselines3.ppo import CnnPolicy as ppocnn
-from stable_baselines3.sac import CnnPolicy as saccnn
+from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.monitor import Monitor
@@ -9,15 +7,22 @@ import wandb
 from wandb.integration.sb3 import WandbCallback
 from stable_baselines3.common.utils import set_random_seed
 import torch
+import torch as th
 from torch import nn
 import argparse
 import os
+import torchvision.models as models
+import gymnasium as gym
+from stable_baselines3.common.noise import NormalActionNoise
+import numpy as np
 
+
+action_noise = NormalActionNoise(mean=np.zeros(5), sigma=0.1 * np.ones(5))
 
 set_random_seed(42)
 # Argument parsing
 parser = argparse.ArgumentParser()
-parser.add_argument('--run_name', type=str, default="ee_position_int_reward_obs_with_depth_v4", help='Name of the run')
+parser.add_argument('--run_name', type=str, default="SAC_multi_v13", help='Name of the run')
 parser.add_argument('--load_model', type=str, help='Path to the model to load', default="")
 args = parser.parse_args()
 
@@ -29,45 +34,54 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from gymnasium import spaces
 
 # Define a custom feature extractor for the image
-class CustomCNN(BaseFeaturesExtractor):
-    def __init__(self, observation_space: spaces.Dict, features_dim: int = 256):
-        super(CustomCNN, self).__init__(observation_space, features_dim)
-        # Image has shape (256, 256, 3), assuming that's the key 'image'
-        n_input_channels = observation_space.spaces['image'].shape[2]
-        
-        self.cnn = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=32, kernel_size=8, stride=4, padding=0),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=0),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=0),
-            nn.ReLU(),
-            nn.Flatten()
-        )
+class CustomCombinedExtractor(BaseFeaturesExtractor):
+    def __init__(self, observation_space: gym.spaces.Dict):
+        super().__init__(observation_space, features_dim=1)
 
-        
-        # Compute shape by doing a forward pass with dummy data
-        with torch.no_grad():
-            n_flatten = self.cnn(torch.as_tensor(observation_space.spaces['image'].sample()[None]).float()).shape[1]
+        extractors = {}
+        total_concat_size = 0
 
-        # Combine the CNN output and end-effector position (3D)
-        self.linear = nn.Sequential(
-            nn.Linear(n_flatten + 3, features_dim),  # 3 = number of end-effector position dimensions
-            nn.ReLU()
-        )
+        for key, subspace in observation_space.spaces.items():
+            if key == "image":
+                # Use ResNet (pre-trained or untrained) as the feature extractor for image
+                resnet = models.resnet18(pretrained=True)
+                # Remove the final classification layer, keeping the feature extractor part
+                resnet = nn.Sequential(*list(resnet.children())[:-1])
+                for param in resnet.parameters():
+                    param.requires_grad = False
+                
+                fine_tune_layers = nn.Sequential(
+                    nn.Linear(512, 256),  # First additional layer
+                    nn.ReLU(),
+                    nn.Linear(256, 128),  # Second additional layer
+                    nn.ReLU()
+                )
 
-    def forward(self, observations):
-        # Process the image part of the observation through the CNN
-        image = observations['image'].float() / 255.0
-        image_features = self.cnn(image)
-        
-        # Get the end-effector position
-        end_effector_pos = observations['end_effector_pos'].float()
-        
-        # Concatenate the CNN output and the end-effector position
-        combined_features = torch.cat((image_features, end_effector_pos), dim=1)
-        
-        return self.linear(combined_features)
+                extractors[key] = nn.Sequential(
+                    resnet,
+                    nn.Flatten(),  # Flatten the output of ResNet
+                    # fine_tune_layers
+                )
+                # The output size of resnet18 is 512
+                total_concat_size += 512
+            elif key == "end_effector_pos":
+                # For the vector input, we'll use a simple MLP with 16 output units
+                extractors[key] = nn.Sequential(
+                    nn.Linear(subspace.shape[0], 16),
+                    nn.ReLU()
+                )
+                total_concat_size += 16
+
+        self.extractors = nn.ModuleDict(extractors)
+        self._features_dim = total_concat_size
+
+    def forward(self, observations) -> th.Tensor:
+        encoded_tensor_list = []
+
+        for key, extractor in self.extractors.items():
+            encoded_tensor_list.append(extractor(observations[key]))
+
+        return th.cat(encoded_tensor_list, dim=1)
 
 
 name = run_name
@@ -103,12 +117,17 @@ callback = CheckpointCallback(save_freq=10000, save_path=log_dir, name_prefix="m
 
 policy_kwargs = dict(activation_fn=torch.nn.ReLU, 
                      net_arch=dict(pi=[64, 64], qf=[400, 300]),
-                     features_extractor_class=CustomCNN,
-                     features_extractor_kwargs=dict(features_dim=256))  # Output of feature extractor)
+                     features_extractor_class=CustomCombinedExtractor)
 
 # Load the model if a path is provided, otherwise create a new model
 if load_model and os.path.exists(load_model):
-    model = SAC.load(load_model, env=my_env, verbose=1)
+    model = SAC.load(load_model, env=my_env, verbose=1,
+                     buffer_size=100000,
+                    batch_size=128,
+                    gamma=0.8,
+                    device="cuda:0",
+                    action_noise=action_noise,
+                    tensorboard_log=f"{log_dir}/tensorboard")
     print(f"Loaded model from {load_model}")
 else:
     model = SAC(
@@ -117,8 +136,10 @@ else:
         verbose=1,
         policy_kwargs=policy_kwargs,
         buffer_size=100000,
-        gamma=0.9,
+        batch_size=128,
+        gamma=0.8,
         device="cuda:0",
+        action_noise=action_noise,
         tensorboard_log=f"{log_dir}/tensorboard",
     )
 
@@ -129,5 +150,8 @@ model.learn(
         model_save_path=f"{log_dir}/models/{run.id}",
         verbose=2)],
 )
+
+# save the replay buffer
+model.save_replay_buffer(f"{log_dir}")
 
 my_env.close()

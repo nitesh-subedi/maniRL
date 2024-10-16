@@ -58,7 +58,7 @@ class MyBuddyEnv(gym.Env):
         gc.collect()
         self._simulation_app.update()
 
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(5,), dtype=np.float32)
+        self.action_space = spaces.Box(low=-5.0, high=5.0, shape=(5,), dtype=np.float32)
         image_obs_space = spaces.Box(
             low=0,
             high=255,
@@ -73,7 +73,7 @@ class MyBuddyEnv(gym.Env):
             dtype=np.float64
         )
 
-        # Combine both spaces using Tuple or Dict (depending on your needs)
+        # # Combine both spaces using Tuple or Dict (depending on your needs)
         self.observation_space = spaces.Dict({
             'image': image_obs_space,
             'end_effector_pos': end_effector_space
@@ -88,10 +88,7 @@ class MyBuddyEnv(gym.Env):
 
         self.episode_length = 0
         self.initial_angles = np.deg2rad([0, -110, 120, -120, -95, 0])
-        # # Initialize parameters for EXPLORS
-        # self.w = {}  # Initialize state visitation counts for exploration bonus
-
-        # # Initialize list to store previous actions for intrinsic reward calculation
+        # Initialize list to store previous actions for intrinsic reward calculation
         max_length = 1000
         self.previous_actions = deque(maxlen=max_length)
         # self.last_good_actions = self.initial_angles
@@ -103,11 +100,11 @@ class MyBuddyEnv(gym.Env):
         
 
     def step(self, action):
-        action = np.clip(action, -1.0, 1.0)
+        action = np.clip(action, -5.0, 5.0)
         if self.observing_cube:
-            action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.05
+            action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.05 / 5
         else:
-            action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.1
+            action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.1 / 5
         action = self.last_angles + action
         self.robot.send_angles(0, action, degrees=False)
         self.world._world.step()
@@ -151,12 +148,15 @@ class MyBuddyEnv(gym.Env):
         if time.time() - self.tic > 5:
             self.tic = time.time()
             cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image_goal_output.jpg", result)
+            cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/real_output.jpg", cv2.cvtColor(obs, cv2.COLOR_RGB2BGR))
         # More reward if less unwanted pixels
-        reward = - (unwanted_pixels / 60000) * 10
+        reward = - (unwanted_pixels / 60000) * 30
 
-        # goal_location = np.array([0, -0.6])
-        # # More reward if closer to goal
-        # reward -= np.linalg.norm(ee_location[:2] - goal_location) * 10
+        # print(f"pixel_Reward: {reward}")
+        # print(f"ee_location: {ee_location}")
+        # more reward if y is less than 0
+        # reward += - (ee_location[1] / 2) * 100
+        # reward += - (ee_location[0] / 2) * 100
 
         # Penalize collision
         if collision:
