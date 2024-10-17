@@ -89,7 +89,7 @@ class MyBuddyEnv(gym.Env):
         self.episode_length = 0
         self.initial_angles = np.deg2rad([0, -110, 120, -120, -95, 0])
         # Initialize list to store previous actions for intrinsic reward calculation
-        max_length = 1000
+        max_length = 100000
         self.previous_actions = deque(maxlen=max_length)
         # self.last_good_actions = self.initial_angles
         # self.last_pixels = 0
@@ -97,7 +97,7 @@ class MyBuddyEnv(gym.Env):
         self.tic = time.time()
         # self.total_visits = 0
         # self.previous_magnitude_spectrum = None
-        
+
 
     def step(self, action):
         action = np.clip(action, -5.0, 5.0)
@@ -155,7 +155,7 @@ class MyBuddyEnv(gym.Env):
         # print(f"pixel_Reward: {reward}")
         # print(f"ee_location: {ee_location}")
         # more reward if y is less than 0
-        # reward += - (ee_location[1] / 2) * 100
+        reward += - (ee_location[1] / 2) * 10
         # reward += - (ee_location[0] / 2) * 100
 
         # Penalize collision

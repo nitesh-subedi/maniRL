@@ -17,12 +17,12 @@ from stable_baselines3.common.noise import NormalActionNoise
 import numpy as np
 
 
-action_noise = NormalActionNoise(mean=np.zeros(5), sigma=0.1 * np.ones(5))
+action_noise = NormalActionNoise(mean=np.zeros(5), sigma=0.05 * np.ones(5))
 
 set_random_seed(42)
 # Argument parsing
 parser = argparse.ArgumentParser()
-parser.add_argument('--run_name', type=str, default="SAC_multi_v13", help='Name of the run')
+parser.add_argument('--run_name', type=str, default="SAC_multi_v19", help='Name of the run')
 parser.add_argument('--load_model', type=str, help='Path to the model to load', default="")
 args = parser.parse_args()
 
@@ -49,18 +49,10 @@ class CustomCombinedExtractor(BaseFeaturesExtractor):
                 resnet = nn.Sequential(*list(resnet.children())[:-1])
                 for param in resnet.parameters():
                     param.requires_grad = False
-                
-                fine_tune_layers = nn.Sequential(
-                    nn.Linear(512, 256),  # First additional layer
-                    nn.ReLU(),
-                    nn.Linear(256, 128),  # Second additional layer
-                    nn.ReLU()
-                )
 
                 extractors[key] = nn.Sequential(
                     resnet,
-                    nn.Flatten(),  # Flatten the output of ResNet
-                    # fine_tune_layers
+                    nn.Flatten()
                 )
                 # The output size of resnet18 is 512
                 total_concat_size += 512
@@ -136,7 +128,7 @@ else:
         verbose=1,
         policy_kwargs=policy_kwargs,
         buffer_size=100000,
-        batch_size=128,
+        batch_size=256,
         gamma=0.8,
         device="cuda:0",
         action_noise=action_noise,
