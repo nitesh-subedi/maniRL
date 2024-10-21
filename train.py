@@ -22,8 +22,8 @@ action_noise = NormalActionNoise(mean=np.zeros(5), sigma=0.03 * np.ones(5))
 set_random_seed(42)
 # Argument parsing
 parser = argparse.ArgumentParser()
-parser.add_argument('--run_name', type=str, default="SAC_multi_v22", help='Name of the run')
-parser.add_argument('--load_model', type=str, help='Path to the model to load', default="")
+parser.add_argument('--run_name', type=str, default="SAC_multi_v23", help='Name of the run')
+parser.add_argument('--load_model', type=str, help='Path to the model to load', default="/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/new_obs_results/SAC_multi_v22/mybuddy_policy_checkpoint_310000_steps.zip")
 args = parser.parse_args()
 
 run_name = args.run_name
@@ -115,7 +115,7 @@ policy_kwargs = dict(activation_fn=torch.nn.ReLU,
 if load_model and os.path.exists(load_model):
     model = SAC.load(load_model, env=my_env, verbose=1,
                      buffer_size=100000,
-                    batch_size=128,
+                    batch_size=512,
                     gamma=0.8,
                     device="cuda:0",
                     action_noise=action_noise,

@@ -3,15 +3,11 @@ from gymnasium import spaces
 import numpy as np
 import cv2
 from isaacsim import SimulationApp
-from scipy.spatial import distance
 import time
 from collections import deque
-from PIL import Image
-import sys
 import gc
-import torch
 from mybuddy.utils import DepthEstimator
-
+from memory_profiler import profile
 
 
 class MyBuddyEnv(gym.Env):
@@ -21,7 +17,7 @@ class MyBuddyEnv(gym.Env):
                  rendering_dt=1.0 / 60.0,
                  max_episode_length=1000,
                  seed=0,
-                 config={"headless": True, "anti_aliasing": 1}) -> None:
+                 config={"headless": True, "anti_aliasing": 0}) -> None:
         super().__init__()
         self.depth_estimator = DepthEstimator()
         self._simulation_app = SimulationApp(launch_config=config)
@@ -32,6 +28,7 @@ class MyBuddyEnv(gym.Env):
 
         from omni.isaac.core.utils.extensions import enable_extension
         enable_extension("omni.services.streamclient.webrtc")
+        enable_extension("omni.syntheticdata")
 
         self._skip_frame = skip_frame
         self._dt = physics_dt * self._skip_frame
@@ -50,12 +47,7 @@ class MyBuddyEnv(gym.Env):
             urdf_path="/home/nitesh/workspace/rosws/mybuddy_robot_rl/src/mybuddy_description/urdf/urdf.urdf",
             world=self.world.world, simulation_app=self._simulation_app)
 
-        import omni
-        omni.timeline.get_timeline_interface().play()
-        # self.robot.initialise_control_interface()
-
         self.world._world.step()
-        gc.collect()
         self._simulation_app.update()
 
         self.action_space = spaces.Box(low=-5.0, high=5.0, shape=(5,), dtype=np.float32)
@@ -91,28 +83,21 @@ class MyBuddyEnv(gym.Env):
         # Initialize list to store previous actions for intrinsic reward calculation
         max_length = 10000
         self.previous_actions = deque(maxlen=max_length)
-        # self.last_good_actions = self.initial_angles
-        # self.last_pixels = 0
-        # self.observing_cube = False
         self.tic = time.time()
         self.last_reward = 0
+        self.first_call = True
 
 
     def step(self, action):
         action = np.clip(action, -5.0, 5.0) / 5.0
-        if self.last_reward>10.0:
-            action = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-        else:
-            action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.1 
+        action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.1 
         action = self.last_angles + action
         self.robot.send_angles(0, action, degrees=False)
         self.world._world.step()
-        gc.collect()
         collision, end_effector_collision = self.robot.check_collision()
         self.last_angles = action
         obs = self.get_observation()
         ee_location = np.array(self.robot.get_ee_position())
-        # print(f"EE Location: {ee_location}")
         reward = self.get_reward(obs, collision, ee_location)
         int_reward = self.get_intrinsic_reward(action)
         # Combine rewards
@@ -122,6 +107,8 @@ class MyBuddyEnv(gym.Env):
 
         done = self.get_done(collision)
         self.episode_length += 1
+        if self.episode_length % 100 == 0:
+            gc.collect()
         truncated = self.is_truncated()
         observation = {
             'image': obs,
@@ -135,13 +122,13 @@ class MyBuddyEnv(gym.Env):
         if collision:
             return True
         return False
-
+    
     def get_observation(self):
         return cv2.resize(self.world.get_image(), (256, 256))
 
     def get_reward(self, obs, collision, ee_location):
         # Compute reward based on the observation
-        unwanted_pixels, result = self.depth_estimator.remove_nearest_objects(obs, threshold=0.5)
+        unwanted_pixels, result = self.depth_estimator.remove_nearest_objects(obs, threshold=0.6)
         if time.time() - self.tic > 5:
             self.tic = time.time()
             cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image_goal_output.jpg", result)
@@ -151,11 +138,7 @@ class MyBuddyEnv(gym.Env):
         del unwanted_pixels
         del result
 
-        # print(f"pixel_Reward: {reward}")
-        # print(f"ee_location: {ee_location}")
-        # more reward if y is less than 0
         reward += - (ee_location[1] / 2) * 100
-        reward += - (ee_location[0] / 2) * 100
 
         # Penalize collision
         if collision:
@@ -163,24 +146,22 @@ class MyBuddyEnv(gym.Env):
 
         return reward + 0.1
 
-
+    
     def is_truncated(self):
         if self.world._world.current_time_step_index - self._steps_after_reset >= self._max_episode_length:
             return True
-        # if self.episode_length >= self._max_episode_length:
-        #     return True
         return False
-
+    
     def reset(self, seed=None):
-        self.world._world.stop()
-        self.world._world.reset()
-        torch.cuda.empty_cache()
+        if self.first_call:
+            self.world._world.reset()
+            self.first_call = False
+        else:
+            self.world._world.reset(soft=True)
         # initial_angles = np.deg2rad([-90, np.random.uniform(-110, 40), 120, -120, 0, 0]) # -90, 30, 120, -120, 0, 0
         self.robot.send_angles(0, np.deg2rad([-90, np.random.uniform(-110, 30), 120, -120, 0, 0]), degrees=False)
-        torch.cuda.empty_cache()
         for i in range(30):
             self.world._world.step()
-        gc.collect()
         self.world.goal_cube.set_world_pose([np.random.uniform(-0.02, 0.02), -0.4, 0.22], [0, 0, 0, 1])
         self.episode_length = 0
         self.last_angles = self.initial_angles
@@ -234,43 +215,3 @@ class MyBuddyEnv(gym.Env):
         
         return intrinsic_reward
 
-    def get_exploration_bonus(self, obs):
-        state_abstraction = self.state_abstraction(obs)
-
-        closest_abstraction = None
-        min_hamming_distance = float('inf')
-
-        # Find the closest abstraction in terms of Hamming distance
-        for abstraction in self.w.keys():
-            hamming_distance = state_abstraction - abstraction
-            if hamming_distance < min_hamming_distance:
-                min_hamming_distance = hamming_distance
-                closest_abstraction = abstraction
-
-        # Update the visit count based on the closest state
-        if closest_abstraction is not None and min_hamming_distance < self.hamming_threshold():
-            self.w[closest_abstraction] += 1
-            pseudo_count = self.w.get(state_abstraction, 0)
-        else:
-            self.w[state_abstraction] = 1
-            pseudo_count = 1
-
-        smoothed_bonus = np.sqrt(np.log(1 + self.total_visits) / (1 + (0.9 * pseudo_count + 0.1 * pseudo_count)))
-        self.total_visits += 1
-
-        # if time.time() - self.tic > 5:
-        #     self.tic = time.time()
-        #     print(f"Exploration Bonus: {smoothed_bonus}")
-        return smoothed_bonus
-
-    def state_abstraction(self, obs):
-        # Use ORB (Oriented FAST and Rotated BRIEF) for better feature extraction from images
-        keypoints, descriptors = self.orb.detectAndCompute(obs, None)
-        hash_value = np.sum(descriptors) if descriptors is not None else 0
-        state_abstraction = hash_value % 10000  # Hash to a manageable size
-
-        return state_abstraction
-
-    def hamming_threshold(self):
-        # Define a threshold for the Hamming distance to consider states as similar
-        return 10

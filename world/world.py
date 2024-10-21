@@ -11,13 +11,14 @@ import omni.isaac.core.utils.prims as prims_utils
 import gc
 
 
-
 class SimulationEnv:
     def __init__(self, config):
         self._world = World(physics_dt=config["physics_dt"],
                             rendering_dt=config["rendering_dt"],
                             stage_units_in_meters=1.0,
-                            set_defaults=False)
+                            set_defaults=False,
+                            backend="torch",
+                            device="cuda")
         self._world.scene.add_default_ground_plane()
         self.stage = omni.usd.get_context().get_stage()
         self.config = config
