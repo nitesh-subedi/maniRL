@@ -17,12 +17,12 @@ from stable_baselines3.common.noise import NormalActionNoise
 import numpy as np
 
 
-action_noise = NormalActionNoise(mean=np.zeros(5), sigma=0.05 * np.ones(5))
+action_noise = NormalActionNoise(mean=np.zeros(5), sigma=0.03 * np.ones(5))
 
 set_random_seed(42)
 # Argument parsing
 parser = argparse.ArgumentParser()
-parser.add_argument('--run_name', type=str, default="SAC_multi_v19", help='Name of the run')
+parser.add_argument('--run_name', type=str, default="SAC_multi_v22", help='Name of the run')
 parser.add_argument('--load_model', type=str, help='Path to the model to load', default="")
 args = parser.parse_args()
 
@@ -128,7 +128,7 @@ else:
         verbose=1,
         policy_kwargs=policy_kwargs,
         buffer_size=100000,
-        batch_size=256,
+        batch_size=512,
         gamma=0.8,
         device="cuda:0",
         action_noise=action_noise,

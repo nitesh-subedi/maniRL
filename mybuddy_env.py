@@ -87,24 +87,23 @@ class MyBuddyEnv(gym.Env):
         self.upper_green = np.array([85, 255, 255])
 
         self.episode_length = 0
-        self.initial_angles = np.deg2rad([0, -110, 120, -120, -95, 0])
+        self.initial_angles = np.deg2rad([-90, -110, 120, -120, 0, 0]) # -90, 30, 120, -120, 0, 0
         # Initialize list to store previous actions for intrinsic reward calculation
-        max_length = 100000
+        max_length = 10000
         self.previous_actions = deque(maxlen=max_length)
         # self.last_good_actions = self.initial_angles
         # self.last_pixels = 0
         # self.observing_cube = False
         self.tic = time.time()
-        # self.total_visits = 0
-        # self.previous_magnitude_spectrum = None
+        self.last_reward = 0
 
 
     def step(self, action):
-        action = np.clip(action, -5.0, 5.0)
-        if self.observing_cube:
-            action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.05 / 5
+        action = np.clip(action, -5.0, 5.0) / 5.0
+        if self.last_reward>10.0:
+            action = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         else:
-            action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.1 / 5
+            action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.1 
         action = self.last_angles + action
         self.robot.send_angles(0, action, degrees=False)
         self.world._world.step()
@@ -128,6 +127,7 @@ class MyBuddyEnv(gym.Env):
             'image': obs,
             'end_effector_pos': ee_location
         }
+        self.last_reward = total_reward
         return observation, float(total_reward), done, truncated, {}
 
     @staticmethod
@@ -137,26 +137,25 @@ class MyBuddyEnv(gym.Env):
         return False
 
     def get_observation(self):
-        image = self.world.get_image()
-        image = cv2.resize(image, (256, 256))
-
-        return image
+        return cv2.resize(self.world.get_image(), (256, 256))
 
     def get_reward(self, obs, collision, ee_location):
         # Compute reward based on the observation
-        unwanted_pixels, result = self.depth_estimator.remove_nearest_objects(obs)
+        unwanted_pixels, result = self.depth_estimator.remove_nearest_objects(obs, threshold=0.5)
         if time.time() - self.tic > 5:
             self.tic = time.time()
             cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image_goal_output.jpg", result)
             cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/real_output.jpg", cv2.cvtColor(obs, cv2.COLOR_RGB2BGR))
         # More reward if less unwanted pixels
         reward = - (unwanted_pixels / 60000) * 30
+        del unwanted_pixels
+        del result
 
         # print(f"pixel_Reward: {reward}")
         # print(f"ee_location: {ee_location}")
         # more reward if y is less than 0
-        reward += - (ee_location[1] / 2) * 10
-        # reward += - (ee_location[0] / 2) * 100
+        reward += - (ee_location[1] / 2) * 100
+        reward += - (ee_location[0] / 2) * 100
 
         # Penalize collision
         if collision:
@@ -176,7 +175,8 @@ class MyBuddyEnv(gym.Env):
         self.world._world.stop()
         self.world._world.reset()
         torch.cuda.empty_cache()
-        self.robot.send_angles(0, self.initial_angles, degrees=False)
+        # initial_angles = np.deg2rad([-90, np.random.uniform(-110, 40), 120, -120, 0, 0]) # -90, 30, 120, -120, 0, 0
+        self.robot.send_angles(0, np.deg2rad([-90, np.random.uniform(-110, 30), 120, -120, 0, 0]), degrees=False)
         torch.cuda.empty_cache()
         for i in range(30):
             self.world._world.step()

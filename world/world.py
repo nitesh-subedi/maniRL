@@ -8,6 +8,7 @@ from pxr import UsdGeom, Gf, PhysxSchema, UsdPhysics, Sdf
 from omni.isaac.core import PhysicsContext
 from omni.isaac.core.utils.stage import add_reference_to_stage
 import omni.isaac.core.utils.prims as prims_utils
+import gc
 
 
 
@@ -243,6 +244,8 @@ class SimulationEnv:
         orient_attr.Set(quaternion)
 
     def get_image(self):
+        self.world.render()
+        gc.collect()
         return self.camera.get_rgba()[:, :, :3]
     
     def get_ee_image(self):
