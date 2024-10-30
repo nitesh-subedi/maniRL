@@ -1,5 +1,5 @@
 from mybuddy_env import MyBuddyEnv as maniEnv
-from stable_baselines3 import SAC, PPO
+from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.monitor import Monitor
@@ -7,65 +7,68 @@ import wandb
 from wandb.integration.sb3 import WandbCallback
 from stable_baselines3.common.utils import set_random_seed
 import torch
+import torch as th
 from torch import nn
 import argparse
 import os
+import torchvision.models as models
+import gymnasium as gym
 
 
 set_random_seed(42)
 # Argument parsing
 parser = argparse.ArgumentParser()
-parser.add_argument('--run_name', type=str, default="multi_ppo_v2", help='Name of the run')
+parser.add_argument('--run_name', type=str, default="PPO_v1", help='Name of the run')
 parser.add_argument('--load_model', type=str, help='Path to the model to load', default="")
 args = parser.parse_args()
 
 run_name = args.run_name
 load_model = args.load_model
 
-
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from gymnasium import spaces
 
 # Define a custom feature extractor for the image
-class CustomCNN(BaseFeaturesExtractor):
-    def __init__(self, observation_space: spaces.Dict, features_dim: int = 256):
-        super(CustomCNN, self).__init__(observation_space, features_dim)
-        # Image has shape (256, 256, 3), assuming that's the key 'image'
-        n_input_channels = observation_space.spaces['image'].shape[2]
-        
-        self.cnn = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=32, kernel_size=8, stride=4, padding=0),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=0),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=0),
-            nn.ReLU(),
-            nn.Flatten()
-        )
+class CustomCombinedExtractor(BaseFeaturesExtractor):
+    def __init__(self, observation_space: gym.spaces.Dict):
+        super().__init__(observation_space, features_dim=1)
 
-        
-        # Compute shape by doing a forward pass with dummy data
-        with torch.no_grad():
-            n_flatten = self.cnn(torch.as_tensor(observation_space.spaces['image'].sample()[None]).float()).shape[1]
+        extractors = {}
+        total_concat_size = 0
 
-        # Combine the CNN output and end-effector position (3D)
-        self.linear = nn.Sequential(
-            nn.Linear(n_flatten + 3, features_dim),  # 3 = number of end-effector position dimensions
-            nn.ReLU()
-        )
+        for key, subspace in observation_space.spaces.items():
+            if key == "image":
+                # Use ResNet (pre-trained or untrained) as the feature extractor for image
+                resnet = models.resnet18(pretrained=True)
+                # Remove the final classification layer, keeping the feature extractor part
+                resnet = nn.Sequential(*list(resnet.children())[:-1])
+                for param in resnet.parameters():
+                    param.requires_grad = False
 
-    def forward(self, observations):
-        # Process the image part of the observation through the CNN
-        image = observations['image'].float() / 255.0
-        image_features = self.cnn(image)
-        
-        # Get the end-effector position
-        end_effector_pos = observations['end_effector_pos'].float()
-        
-        # Concatenate the CNN output and the end-effector position
-        combined_features = torch.cat((image_features, end_effector_pos), dim=1)
-        
-        return self.linear(combined_features)
+                extractors[key] = nn.Sequential(
+                    resnet,
+                    nn.Flatten()
+                )
+                # The output size of resnet18 is 512
+                total_concat_size += 512
+            elif key == "end_effector_pos":
+                # For the vector input, we'll use a simple MLP with 16 output units
+                extractors[key] = nn.Sequential(
+                    nn.Linear(subspace.shape[0], 16),
+                    nn.ReLU()
+                )
+                total_concat_size += 16
+
+        self.extractors = nn.ModuleDict(extractors)
+        self._features_dim = total_concat_size
+
+    def forward(self, observations) -> th.Tensor:
+        encoded_tensor_list = []
+
+        for key, extractor in self.extractors.items():
+            encoded_tensor_list.append(extractor(observations[key]))
+
+        return th.cat(encoded_tensor_list, dim=1)
 
 
 name = run_name
@@ -100,13 +103,18 @@ total_timesteps = 1000000
 callback = CheckpointCallback(save_freq=10000, save_path=log_dir, name_prefix="mybuddy_policy_checkpoint")
 
 policy_kwargs = dict(activation_fn=torch.nn.ReLU, 
-                     net_arch=dict(pi=[64, 64], vf=[400, 300]),
-                     features_extractor_class=CustomCNN,
-                     features_extractor_kwargs=dict(features_dim=256))  # Output of feature extractor)
+                     net_arch=[dict(pi=[64, 64, 64, 64], vf=[400, 300, 300, 400])],
+                     features_extractor_class=CustomCombinedExtractor)
 
 # Load the model if a path is provided, otherwise create a new model
 if load_model and os.path.exists(load_model):
-    model = PPO.load(load_model, env=my_env, verbose=1)
+    model = PPO.load(load_model, env=my_env, verbose=1,
+                     n_steps=2048,
+                     batch_size=512,
+                     gamma=0.8,
+                     gae_lambda=0.95,
+                     device="cuda:0",
+                     tensorboard_log=f"{log_dir}/tensorboard")
     print(f"Loaded model from {load_model}")
 else:
     model = PPO(
@@ -114,8 +122,10 @@ else:
         my_env,
         verbose=1,
         policy_kwargs=policy_kwargs,
-        ent_coef=0.008,
-        gamma=0.9,
+        n_steps=2048,
+        batch_size=1024,
+        gamma=0.8,
+        gae_lambda=0.95,
         device="cuda:0",
         tensorboard_log=f"{log_dir}/tensorboard",
     )
@@ -127,5 +137,8 @@ model.learn(
         model_save_path=f"{log_dir}/models/{run.id}",
         verbose=2)],
 )
+
+# Save the final model
+model.save(f"{log_dir}/ppo_mybuddy_policy")
 
 my_env.close()

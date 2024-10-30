@@ -22,8 +22,8 @@ action_noise = NormalActionNoise(mean=np.zeros(5), sigma=0.03 * np.ones(5))
 set_random_seed(42)
 # Argument parsing
 parser = argparse.ArgumentParser()
-parser.add_argument('--run_name', type=str, default="SAC_multi_v23", help='Name of the run')
-parser.add_argument('--load_model', type=str, help='Path to the model to load', default="/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/new_obs_results/SAC_multi_v22/mybuddy_policy_checkpoint_310000_steps.zip")
+parser.add_argument('--run_name', type=str, default="SAC_multi_v29", help='Name of the run')
+parser.add_argument('--load_model', type=str, help='Path to the model to load', default="")
 args = parser.parse_args()
 
 run_name = args.run_name
@@ -31,7 +31,6 @@ load_model = args.load_model
 
 
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-from gymnasium import spaces
 
 # Define a custom feature extractor for the image
 class CustomCombinedExtractor(BaseFeaturesExtractor):
@@ -86,16 +85,30 @@ run = wandb.init(
 )
 
 
+# CONFIG = {
+#     "width": 1280,
+#     "height": 720,
+#     "window_width": 1920,
+#     "window_height": 1080,
+#     "headless": True,
+#     "renderer": "RayTracedLighting",
+#     "display_options": 3286,  # Set display options to show default grid
+#     "anti_aliasing": 0,
+# }
+
 CONFIG = {
-    "width": 1280,
-    "height": 720,
-    "window_width": 1920,
-    "window_height": 1080,
-    "headless": True,
-    "renderer": "RayTracedLighting",
-    "display_options": 3286,  # Set display options to show default grid
-    "anti_aliasing": 0,
+    "width": 1280/3,  # Reduce resolution width
+    "height": 720/3,  # Reduce resolution height
+    "window_width": 1280/3,  # Window width (can match rendering resolution for consistency)
+    "window_height": 720/3,  # Window height (can match rendering resolution for consistency)
+    "headless": True,  # Keep headless mode enabled for non-GUI rendering
+    "renderer": "RayTracedLighting",  # Switch to a faster rendering mode than RayTracedLighting
+    "display_options": 0,  # Disable display options to remove extra elements (e.g., grid)
+    "anti_aliasing": 0,  # Keep anti-aliasing disabled to improve performance
+    "enable_gpu_optimizations": True,  # Custom field to suggest GPU optimizations
+    "reduce_material_complexity": True,  # Placeholder to suggest reducing material/lighting
 }
+
 
 log_dir = f"./new_obs_results/{name}"
 os.makedirs(log_dir, exist_ok=True)
@@ -128,8 +141,8 @@ else:
         verbose=1,
         policy_kwargs=policy_kwargs,
         buffer_size=100000,
-        batch_size=512,
-        gamma=0.8,
+        batch_size=256,
+        gamma=0.9,
         device="cuda:0",
         action_noise=action_noise,
         tensorboard_log=f"{log_dir}/tensorboard",

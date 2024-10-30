@@ -8,14 +8,14 @@ CONFIG = {
     "height": 720,
     "window_width": 1920,
     "window_height": 1080,
-    "headless": False,
+    "headless": True,
     "renderer": "RayTracedLighting",
     "display_options": 3286,  # Set display options to show default grid
     "anti_aliasing": 0,
 }
 
 # Choose the policy path to visualize
-policy_path = "/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/new_obs_results/SAC_multi_v22/mybuddy_policy_checkpoint_270000_steps.zip"
+policy_path = "/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/new_obs_results/SAC_multi_v22/mybuddy_policy_checkpoint_310000_steps.zip"
 
 my_env = maniEnv(config=CONFIG)
 model = SAC.load(policy_path)

@@ -95,6 +95,9 @@ class MyBuddyEnv(gym.Env):
         self.robot.send_angles(0, action, degrees=False)
         self.world._world.step()
         collision, end_effector_collision = self.robot.check_collision()
+        if collision:
+            print("Collision")
+        # print(f"Collision: {collision}, End effector collision: {end_effector_collision}")
         self.last_angles = action
         obs = self.get_observation()
         ee_location = np.array(self.robot.get_ee_position())
@@ -153,18 +156,15 @@ class MyBuddyEnv(gym.Env):
         return False
     
     def reset(self, seed=None):
-        if self.first_call:
-            self.world._world.reset()
-            self.first_call = False
-        else:
-            self.world._world.reset(soft=True)
+        self.world._world.reset()
         # initial_angles = np.deg2rad([-90, np.random.uniform(-110, 40), 120, -120, 0, 0]) # -90, 30, 120, -120, 0, 0
-        self.robot.send_angles(0, np.deg2rad([-90, np.random.uniform(-110, 30), 120, -120, 0, 0]), degrees=False)
+        init_angles = np.deg2rad([-90, np.random.uniform(-110, 30), 120, -120, 0, 0])
+        self.robot.send_angles(0, init_angles, degrees=False)
         for i in range(30):
             self.world._world.step()
         self.world.goal_cube.set_world_pose([np.random.uniform(-0.02, 0.02), -0.4, 0.22], [0, 0, 0, 1])
         self.episode_length = 0
-        self.last_angles = self.initial_angles
+        self.last_angles = init_angles
         # self.previous_actions = []
         self.w = {}
         self.observing_cube = False

@@ -9,6 +9,8 @@ from omni.isaac.core import PhysicsContext
 from omni.isaac.core.utils.stage import add_reference_to_stage
 import omni.isaac.core.utils.prims as prims_utils
 import gc
+import omni.replicator.core as rep
+import warp as wp
 
 
 class SimulationEnv:
@@ -44,6 +46,29 @@ class SimulationEnv:
         self.import_plant_mesh(usd_path)
         self.add_goal_cube()
         self.add_camera()
+
+        # Setup the render product for the camera
+        import omni.syntheticdata._syntheticdata as sd
+        self.rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(sd.SensorType.Rgb.name)
+        # Setup annotators that will report groundtruth
+        self.rgb = rep.AnnotatorRegistry.get_annotator("LdrColorSDIsaacConvertRGBAToRGB")
+        self.rgb.attach(self.camera_render_product)
+
+
+        import omni.graph.core as og
+
+        keys = og.Controller.Keys
+        (graph_handle, list_of_nodes, _, _) = og.Controller.edit(
+            {"graph_path": "/push_graph", "evaluator_name": "execution"},
+            {
+                keys.CREATE_NODES: [
+                    ("buffer", "omni.syntheticdata.SdPostRenderVarTextureToBuffer"),
+                ],
+                keys.SET_VALUES: [
+                    ("buffer.inputs:renderVar", self.rv)
+                ],
+            },
+        )
     
 
     def make_ground_plane_small(self):
@@ -174,40 +199,53 @@ class SimulationEnv:
             )
         )
 
+    # def add_camera(self):
+    #     self.camera = Camera(
+    #         prim_path="/World/camera",
+    #         position=np.array([0.0, -0.04, 0.36]),
+    #         frequency=20,
+    #         resolution=(256, 256),
+    #     )
+    #     self.camera.initialize()
+    #     self.camera.set_focal_length(1.58)
+    #     self.camera.set_clipping_range(0.01, 1000000.0)
+
+    #     self.camera_prim = self.stage.GetPrimAtPath("/World/camera")
+    #     # Ensure the camera prim is valid
+    #     if not self.camera_prim:
+    #         raise ValueError("Camera prim does not exist at the specified path.")
+
+    #     # Add the orientation attribute if it doesn't exist
+    #     xform = UsdGeom.Xformable(self.camera_prim)
+    #     if not xform.GetXformOpOrderAttr().IsValid():
+    #         xform.AddOrientOp()
+
+    #     # Get the orientation attribute
+    #     orient_attr = self.camera_prim.GetAttribute("xformOp:orient")
+    #     # Define the quaternion components
+    #     w = 6.123233995736766e-17
+    #     x = -4.329780281177466e-17
+    #     y = 0.53833
+    #     z = 0.84274
+
+    #     # Create the quaternion using Gf.Quatd
+    #     quaternion = Gf.Quatd(w, Gf.Vec3d(x, y, z))
+
+    #     # Set the orientation attribute
+    #     orient_attr.Set(quaternion)
+
     def add_camera(self):
-        self.camera = Camera(
-            prim_path="/World/camera",
-            position=np.array([0.0, -0.04, 0.36]),
-            frequency=20,
-            resolution=(256, 256),
+        RESOLUTION = (256, 256)
+        self.camera = rep.create.camera(
+            position=(0.0, -0.04, 0.36),
+            rotation=(0, 0, 90),
+            focal_length=15.8,
+            focus_distance = 0.0,
+            clipping_range=(0.01, 1000000.0),
+            f_stop = 0.0
         )
-        self.camera.initialize()
-        self.camera.set_focal_length(1.58)
-        self.camera.set_clipping_range(0.01, 1000000.0)
+        self.camera_render_product = rep.create.render_product(self.camera, RESOLUTION)
 
-        self.camera_prim = self.stage.GetPrimAtPath("/World/camera")
-        # Ensure the camera prim is valid
-        if not self.camera_prim:
-            raise ValueError("Camera prim does not exist at the specified path.")
-
-        # Add the orientation attribute if it doesn't exist
-        xform = UsdGeom.Xformable(self.camera_prim)
-        if not xform.GetXformOpOrderAttr().IsValid():
-            xform.AddOrientOp()
-
-        # Get the orientation attribute
-        orient_attr = self.camera_prim.GetAttribute("xformOp:orient")
-        # Define the quaternion components
-        w = 6.123233995736766e-17
-        x = -4.329780281177466e-17
-        y = 0.53833
-        z = 0.84274
-
-        # Create the quaternion using Gf.Quatd
-        quaternion = Gf.Quatd(w, Gf.Vec3d(x, y, z))
-
-        # Set the orientation attribute
-        orient_attr.Set(quaternion)
     
     def add_ee_camera(self):
         self.ee_camera = Camera(
@@ -245,9 +283,9 @@ class SimulationEnv:
         orient_attr.Set(quaternion)
 
     def get_image(self):
-        self.world.render()
-        gc.collect()
-        return self.camera.get_rgba()[:, :, :3]
+        # Step - Randomize and render
+        # rep.orchestrator.step()
+        return self.rgb.get_data()["data"]
     
     def get_ee_image(self):
         return self.ee_camera.get_rgba()[:, :, :3]
