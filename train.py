@@ -22,7 +22,7 @@ action_noise = NormalActionNoise(mean=np.zeros(5), sigma=0.03 * np.ones(5))
 set_random_seed(42)
 # Argument parsing
 parser = argparse.ArgumentParser()
-parser.add_argument('--run_name', type=str, default="SAC_multi_v29", help='Name of the run')
+parser.add_argument('--run_name', type=str, default="SAC_multi_v30", help='Name of the run')
 parser.add_argument('--load_model', type=str, help='Path to the model to load', default="")
 args = parser.parse_args()
 
