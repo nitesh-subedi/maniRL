@@ -6,3 +6,4 @@ wandb/
 images/
 real_env_results/
 new_obs_results/
+new_formulation_results/
