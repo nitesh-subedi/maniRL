@@ -8,9 +8,7 @@ from pxr import UsdGeom, Gf, PhysxSchema, UsdPhysics, Sdf
 from omni.isaac.core import PhysicsContext
 from omni.isaac.core.utils.stage import add_reference_to_stage
 import omni.isaac.core.utils.prims as prims_utils
-import gc
 import omni.replicator.core as rep
-import warp as wp
 
 
 class SimulationEnv:
@@ -45,30 +43,45 @@ class SimulationEnv:
         self.import_environment(env_usd)
         self.import_plant_mesh(usd_path)
         self.add_goal_cube()
-        self.add_camera()
+        self.add_rgb_camera()
+        self.add_depth_camera()
 
         # Setup the render product for the camera
         import omni.syntheticdata._syntheticdata as sd
-        self.rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(sd.SensorType.Rgb.name)
+        self.rgb_rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(sd.SensorType.Rgb.name)
+        self.depth_rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(sd.SensorType.Depth.name)
         # Setup annotators that will report groundtruth
         self.rgb = rep.AnnotatorRegistry.get_annotator("LdrColorSDIsaacConvertRGBAToRGB")
-        self.rgb.attach(self.camera_render_product)
+        self.depth = rep.AnnotatorRegistry.get_annotator("DepthLinearized")
+        self.rgb.attach(self.rgb_camera_render_product)
+        self.depth.attach(self.depth_camera_render_product)
 
 
         import omni.graph.core as og
 
         keys = og.Controller.Keys
-        (graph_handle, list_of_nodes, _, _) = og.Controller.edit(
+        (texture_graph_handle, texture_list_of_nodes, _, _) = og.Controller.edit(
             {"graph_path": "/push_graph", "evaluator_name": "execution"},
             {
                 keys.CREATE_NODES: [
-                    ("buffer", "omni.syntheticdata.SdPostRenderVarTextureToBuffer"),
+                    ("rgb_texture_to_device_buffer", "omni.syntheticdata.SdPostRenderVarTextureToBuffer"),
+                    ("depth_texture_to_device_buffer", "omni.syntheticdata.SdPostRenderVarTextureToBuffer"),
+                    ("rgb_device_to_host_buffer", "omni.syntheticdata.SdPostRenderVarToHost"),
+                    ("depth_device_to_host_buffer", "omni.syntheticdata.SdPostRenderVarToHost"),
                 ],
                 keys.SET_VALUES: [
-                    ("buffer.inputs:renderVar", self.rv)
+                    ("rgb_texture_to_device_buffer.inputs:renderVar", self.rgb_rv),
+                    ("depth_texture_to_device_buffer.inputs:renderVar", self.depth_rv),
+                ],
+                keys.CONNECT: [
+                    ("rgb_texture_to_device_buffer.outputs:renderVar", "rgb_device_to_host_buffer.inputs:renderVar"),
+                    ("depth_texture_to_device_buffer.outputs:renderVar", "depth_device_to_host_buffer.inputs:renderVar"),
                 ],
             },
         )
+
+        # Evaluate the graph after creating nodes and setting values
+        og.Controller.evaluate(texture_graph_handle)
     
 
     def make_ground_plane_small(self):
@@ -234,9 +247,9 @@ class SimulationEnv:
     #     # Set the orientation attribute
     #     orient_attr.Set(quaternion)
 
-    def add_camera(self):
+    def add_rgb_camera(self):
         RESOLUTION = (256, 256)
-        self.camera = rep.create.camera(
+        self.rgb_camera = rep.create.camera(
             position=(0.0, -0.04, 0.36),
             rotation=(0, 0, 90),
             focal_length=15.8,
@@ -244,7 +257,19 @@ class SimulationEnv:
             clipping_range=(0.01, 1000000.0),
             f_stop = 0.0
         )
-        self.camera_render_product = rep.create.render_product(self.camera, RESOLUTION)
+        self.rgb_camera_render_product = rep.create.render_product(self.rgb_camera, RESOLUTION)
+    
+    def add_depth_camera(self):
+        RESOLUTION = (256, 256)
+        self.depth_camera = rep.create.camera(
+            position=(0.0, -0.04, 0.36),
+            rotation=(0, 0, 90),
+            focal_length=15.8,
+            focus_distance = 0.0,
+            clipping_range=(0.01, 1000000.0),
+            f_stop = 0.0
+        )
+        self.depth_camera_render_product = rep.create.render_product(self.depth_camera, RESOLUTION)
 
     
     def add_ee_camera(self):
@@ -283,9 +308,7 @@ class SimulationEnv:
         orient_attr.Set(quaternion)
 
     def get_image(self):
-        # Step - Randomize and render
-        # rep.orchestrator.step()
-        return self.rgb.get_data()["data"]
+        return self.rgb.get_data()["data"], self.depth.get_data()
     
     def get_ee_image(self):
         return self.ee_camera.get_rgba()[:, :, :3]

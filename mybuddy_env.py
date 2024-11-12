@@ -8,6 +8,8 @@ from collections import deque
 import gc
 from mybuddy.utils import DepthEstimator
 from memory_profiler import profile
+import ikpy.chain
+import sys
 
 
 class MyBuddyEnv(gym.Env):
@@ -15,11 +17,11 @@ class MyBuddyEnv(gym.Env):
                  skip_frame=1,
                  physics_dt=1.0 / 60.0,
                  rendering_dt=1.0 / 60.0,
-                 max_episode_length=1000,
+                 max_episode_length=200,
                  seed=0,
                  config={"headless": True, "anti_aliasing": 0}) -> None:
         super().__init__()
-        self.depth_estimator = DepthEstimator()
+        # self.depth_estimator = DepthEstimator()
         self._simulation_app = SimulationApp(launch_config=config)
         self._simulation_app.set_setting("/app/window/drawMouse", True)
         self._simulation_app.set_setting("/app/livestream/proto", "ws")
@@ -50,7 +52,7 @@ class MyBuddyEnv(gym.Env):
         self.world._world.step()
         self._simulation_app.update()
 
-        self.action_space = spaces.Box(low=-5.0, high=5.0, shape=(5,), dtype=np.float32)
+        self.action_space = spaces.Box(low=-1, high=1, shape=(6,), dtype=np.float32)
         image_obs_space = spaces.Box(
             low=0,
             high=255,
@@ -72,11 +74,11 @@ class MyBuddyEnv(gym.Env):
         })
         self.last_angles = np.zeros(6)
 
-        self.lower_red = np.array([90, 50, 50])
-        self.upper_red = np.array([130, 255, 255])
+        action_low = np.array([-0.05, -0.35, 0.01, -np.pi, -np.pi, -np.pi])
+        action_high = np.array([0.3, -0.15, 0.35, np.pi, np.pi, np.pi])
+        self.action_mean = (action_low + action_high) / 2
+        self.action_scale = (action_high - action_low) / 2
 
-        self.lower_green = np.array([35, 40, 40])
-        self.upper_green = np.array([85, 255, 255])
 
         self.episode_length = 0
         self.initial_angles = np.deg2rad([-90, -110, 120, -120, 0, 0]) # -90, 30, 120, -120, 0, 0
@@ -86,68 +88,93 @@ class MyBuddyEnv(gym.Env):
         self.tic = time.time()
         self.last_reward = 0
         self.first_call = True
-
+        self.ikchain = ikpy.chain.Chain.from_urdf_file("/home/nitesh/workspace/rosws/mybuddy_robot_rl/src/mybuddy_description/urdf/urdf.urdf")
+    
+    def denormalize_action(self, normalized_action):
+        return (normalized_action * self.action_scale) + self.action_mean
 
     def step(self, action):
-        action = np.clip(action, -5.0, 5.0) / 5.0
-        action = np.array([action[0], action[1], action[2], action[3], action[4], 0.0]) * 0.1 
-        action = self.last_angles + action
-        self.robot.send_angles(0, action, degrees=False)
-        self.world._world.step()
-        collision, end_effector_collision = self.robot.check_collision()
-        if collision:
-            print("Collision")
-        # print(f"Collision: {collision}, End effector collision: {end_effector_collision}")
-        self.last_angles = action
-        obs = self.get_observation()
-        ee_location = np.array(self.robot.get_ee_position())
-        reward = self.get_reward(obs, collision, ee_location)
-        int_reward = self.get_intrinsic_reward(action)
-        # Combine rewards
-        total_reward = reward + int_reward
-        if end_effector_collision:
-            total_reward -= 2
+        action = np.clip(action, -1.0, 1.0)
+        action = self.denormalize_action(action)
+        # Target position and orientation
+        target_position = action[:3]
+        target_orientation = action[3:]
 
-        done = self.get_done(collision)
+        # Compute joint angles using inverse kinematics
+        angles = self.ikchain.inverse_kinematics(target_position, target_orientation)[1:]
+        self.robot.send_angles(0, angles, degrees=False)
+        # if time.time() - self.tic > 5.0:
+        #     real_position =  self.ikchain.forward_kinematics(np.append(0, angles))
+        #     print("The target position is : ", target_position)
+        #     print("The real position is : ", real_position[:3, 3])
+            # self.tic = time.time()
+        self.world._world.step()
+        rgb_obs, depth_obs = self.get_observation()
+        ee_location = np.array(self.robot.get_ee_position())
+        reward = self.get_reward(depth_obs, rgb_obs)
+        # int_reward = self.get_intrinsic_reward(action)
+        # Combine rewards
+        total_reward = reward  # + int_reward
+        done = self.get_done()
         self.episode_length += 1
         if self.episode_length % 100 == 0:
             gc.collect()
         truncated = self.is_truncated()
         observation = {
-            'image': obs,
+            'image': rgb_obs,
             'end_effector_pos': ee_location
         }
         self.last_reward = total_reward
         return observation, float(total_reward), done, truncated, {}
 
     @staticmethod
-    def get_done(collision):
-        if collision:
-            return True
+    def get_done():
         return False
     
     def get_observation(self):
-        return cv2.resize(self.world.get_image(), (256, 256))
+        rgb_obs, depth_obs = self.world.get_image()
+        return rgb_obs, depth_obs
 
-    def get_reward(self, obs, collision, ee_location):
-        # Compute reward based on the observation
-        unwanted_pixels, result = self.depth_estimator.remove_nearest_objects(obs, threshold=0.6)
-        if time.time() - self.tic > 5:
+
+    def get_reward(self, depth_obs, rgb_obs):
+        # Resize depth_obs to match rgb_obs dimensions
+        depth_obs_resized = cv2.resize(depth_obs, (rgb_obs.shape[1], rgb_obs.shape[0]), interpolation=cv2.INTER_NEAREST)
+
+        # Define cube and plant masks
+        # cube_mask = (depth_obs_resized >= 0.28) & (depth_obs_resized <= 0.44)
+        # depth_for_cube = depth_obs_resized.copy()
+        # depth_for_cube[~cube_mask] = 0
+        # depth_for_cube[cube_mask] = 1
+        # wanted_pixels = np.sum(depth_for_cube)
+
+        plant_mask = (depth_obs_resized >= 0.01) & (depth_obs_resized <= 0.27)
+        depth_for_plant = depth_obs_resized.copy()
+        depth_for_plant[~plant_mask] = 0
+        depth_for_plant[plant_mask] = 1
+        unwanted_pixels = np.sum(depth_for_plant)
+
+        # Calculate reward
+        reward = -(unwanted_pixels / 63000) * 5
+        # reward += (wanted_pixels / 2500)
+
+        # Apply depth masks to the RGB image
+        # rgb_cube = rgb_obs.copy()
+        # rgb_cube[~cube_mask] = 0
+
+        rgb_plant = rgb_obs.copy()
+        rgb_plant[~plant_mask] = 0
+
+        # Save images at intervals
+        if time.time() - self.tic > 5.0:
+            # print(-(unwanted_pixels / 63000) * 2, wanted_pixels / 2500)
+            # cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/cube.png", cv2.cvtColor(rgb_cube, cv2.COLOR_RGB2BGR))
+            cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/plant.png", cv2.cvtColor(rgb_plant, cv2.COLOR_RGB2BGR))
             self.tic = time.time()
-            cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/image_goal_output.jpg", result)
-            cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/real_output.jpg", cv2.cvtColor(obs, cv2.COLOR_RGB2BGR))
-        # More reward if less unwanted pixels
-        reward = - (unwanted_pixels / 60000) * 30
-        del unwanted_pixels
-        del result
 
-        reward += - (ee_location[1] / 2) * 100
+        # Clean up
+        del unwanted_pixels, plant_mask, depth_for_plant, rgb_plant
+        return reward
 
-        # Penalize collision
-        if collision:
-            reward -= 20
-
-        return reward + 0.1
 
     
     def is_truncated(self):
@@ -158,20 +185,19 @@ class MyBuddyEnv(gym.Env):
     def reset(self, seed=None):
         self.world._world.reset()
         # initial_angles = np.deg2rad([-90, np.random.uniform(-110, 40), 120, -120, 0, 0]) # -90, 30, 120, -120, 0, 0
-        init_angles = np.deg2rad([-90, np.random.uniform(-110, 30), 120, -120, 0, 0])
+        init_angles = np.deg2rad([-90, 0, 120, -120, 0, 0])
         self.robot.send_angles(0, init_angles, degrees=False)
         for i in range(30):
             self.world._world.step()
         self.world.goal_cube.set_world_pose([np.random.uniform(-0.02, 0.02), -0.4, 0.22], [0, 0, 0, 1])
         self.episode_length = 0
-        self.last_angles = init_angles
-        # self.previous_actions = []
         self.w = {}
         self.observing_cube = False
         self.total_visits = 0
         ee_location = np.array(self.robot.get_ee_position())
+        rgb_obs, depth_obs = self.get_observation()
         observation = {
-            'image': self.get_observation(),
+            'image': rgb_obs,
             'end_effector_pos': ee_location
         }
         return observation, {}

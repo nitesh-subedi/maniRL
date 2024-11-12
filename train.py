@@ -17,12 +17,10 @@ from stable_baselines3.common.noise import NormalActionNoise
 import numpy as np
 
 
-action_noise = NormalActionNoise(mean=np.zeros(5), sigma=0.03 * np.ones(5))
-
 set_random_seed(42)
 # Argument parsing
 parser = argparse.ArgumentParser()
-parser.add_argument('--run_name', type=str, default="SAC_multi_v30", help='Name of the run')
+parser.add_argument('--run_name', type=str, default="SAC_high_level_v11", help='Name of the run')
 parser.add_argument('--load_model', type=str, help='Path to the model to load', default="")
 args = parser.parse_args()
 
@@ -77,30 +75,18 @@ class CustomCombinedExtractor(BaseFeaturesExtractor):
 
 name = run_name
 run = wandb.init(
-    project="EE_states_added",
+    project="New_formulation",
     sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
     monitor_gym=True,  # auto-upload the videos of agents playing the game
     save_code=False,  # optional
     id=name,  # optional,
 )
 
-
-# CONFIG = {
-#     "width": 1280,
-#     "height": 720,
-#     "window_width": 1920,
-#     "window_height": 1080,
-#     "headless": True,
-#     "renderer": "RayTracedLighting",
-#     "display_options": 3286,  # Set display options to show default grid
-#     "anti_aliasing": 0,
-# }
-
 CONFIG = {
-    "width": 1280/3,  # Reduce resolution width
-    "height": 720/3,  # Reduce resolution height
-    "window_width": 1280/3,  # Window width (can match rendering resolution for consistency)
-    "window_height": 720/3,  # Window height (can match rendering resolution for consistency)
+    "width": 1280,  # Reduce resolution width
+    "height": 720,  # Reduce resolution height
+    "window_width": 1280,  # Window width (can match rendering resolution for consistency)
+    "window_height": 720,  # Window height (can match rendering resolution for consistency)
     "headless": True,  # Keep headless mode enabled for non-GUI rendering
     "renderer": "RayTracedLighting",  # Switch to a faster rendering mode than RayTracedLighting
     "display_options": 0,  # Disable display options to remove extra elements (e.g., grid)
@@ -123,6 +109,9 @@ callback = CheckpointCallback(save_freq=10000, save_path=log_dir, name_prefix="m
 policy_kwargs = dict(activation_fn=torch.nn.ReLU, 
                      net_arch=dict(pi=[64, 64], qf=[400, 300]),
                      features_extractor_class=CustomCombinedExtractor)
+action_n = my_env.action_space.shape[0]
+
+action_noise = NormalActionNoise(mean=np.zeros(action_n), sigma=0.2 * np.ones(action_n))
 
 # Load the model if a path is provided, otherwise create a new model
 if load_model and os.path.exists(load_model):
@@ -130,8 +119,8 @@ if load_model and os.path.exists(load_model):
                      buffer_size=100000,
                     batch_size=512,
                     gamma=0.8,
+                    # action_noise=action_noise,
                     device="cuda:0",
-                    action_noise=action_noise,
                     tensorboard_log=f"{log_dir}/tensorboard")
     print(f"Loaded model from {load_model}")
 else:
@@ -143,8 +132,8 @@ else:
         buffer_size=100000,
         batch_size=256,
         gamma=0.9,
+        # action_noise=action_noise,
         device="cuda:0",
-        action_noise=action_noise,
         tensorboard_log=f"{log_dir}/tensorboard",
     )
 
