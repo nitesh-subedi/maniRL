@@ -87,8 +87,10 @@ class SimulationEnv:
         # Setup annotators that will report groundtruth
         self.rgb = rep.AnnotatorRegistry.get_annotator("LdrColorSDIsaacConvertRGBAToRGB")
         self.depth = rep.AnnotatorRegistry.get_annotator("DepthLinearized")
-        self.rgb.initialize(renderVar=rgb_new_render_var)
-        self.depth.initialize(renderVar=depth_new_render_var)
+        self.rgb.renderVar = rgb_new_render_var
+        self.depth.renderVar = depth_new_render_var
+        # self.rgb.initialize(renderVar=rgb_new_render_var)
+        # self.depth.initialize(renderVar=depth_new_render_var)
         self.rgb.attach(self.rgb_camera_render_product)
         self.depth.attach(self.depth_camera_render_product)
     

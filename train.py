@@ -20,7 +20,7 @@ import numpy as np
 set_random_seed(42)
 # Argument parsing
 parser = argparse.ArgumentParser()
-parser.add_argument('--run_name', type=str, default="SAC_high_level_v12", help='Name of the run')
+parser.add_argument('--run_name', type=str, default="SAC_high_level_v14", help='Name of the run')
 parser.add_argument('--load_model', type=str, help='Path to the model to load', default="")
 args = parser.parse_args()
 
@@ -96,7 +96,7 @@ CONFIG = {
 }
 
 
-log_dir = f"./new_obs_results/{name}"
+log_dir = f"/maniRL//new_obs_results/{name}"
 os.makedirs(log_dir, exist_ok=True)
 
 my_env = maniEnv(config=CONFIG)

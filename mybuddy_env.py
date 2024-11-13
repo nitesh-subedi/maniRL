@@ -10,6 +10,7 @@ from mybuddy.utils import DepthEstimator
 from memory_profiler import profile
 import ikpy.chain
 import sys
+import os
 
 
 class MyBuddyEnv(gym.Env):
@@ -40,13 +41,13 @@ class MyBuddyEnv(gym.Env):
         # Import world
         from world.world import SimulationEnv
         self.world = SimulationEnv(config={"physics_dt": physics_dt, "rendering_dt": rendering_dt})
-        self.world.initialise(usd_path="omniverse://localhost/Users/nitesh/plant_v21/plant_v21.usd", 
-                              env_usd = "omniverse://localhost/Users/nitesh/env_v2/environment.usd",
-                              hdr_path="omniverse://localhost/Users/nitesh/env_v2/textures/rosendal_plains_2_4k.hdr")
+        self.world.initialise(usd_path="/isaac_sim_assets/plant_v21/plant_v21.usd", 
+                              env_usd = "/isaac_sim_assets/env_v2/environment.usd",
+                              hdr_path="/isaac_sim_assets/env_v2/textures/rosendal_plains_2_4k.hdr")
 
         from mybuddy.robot import Robot
         self.robot = Robot(
-            urdf_path="/home/nitesh/workspace/rosws/mybuddy_robot_rl/src/mybuddy_description/urdf/urdf.urdf",
+            urdf_path="/isaac_sim_assets/urdf/urdf.urdf",
             world=self.world.world, simulation_app=self._simulation_app)
 
         self.world._world.step()
@@ -88,7 +89,8 @@ class MyBuddyEnv(gym.Env):
         self.tic = time.time()
         self.last_reward = 0
         self.first_call = True
-        self.ikchain = ikpy.chain.Chain.from_urdf_file("/home/nitesh/workspace/rosws/mybuddy_robot_rl/src/mybuddy_description/urdf/urdf.urdf")
+        self.ikchain = ikpy.chain.Chain.from_urdf_file("/isaac_sim_assets/urdf/urdf.urdf")
+        os.makedirs("/maniRL/images", exist_ok=True)
     
     def denormalize_action(self, normalized_action):
         return (normalized_action * self.action_scale) + self.action_mean
@@ -168,7 +170,7 @@ class MyBuddyEnv(gym.Env):
         if time.time() - self.tic > 5.0:
             # print(-(unwanted_pixels / 63000) * 2, wanted_pixels / 2500)
             # cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/cube.png", cv2.cvtColor(rgb_cube, cv2.COLOR_RGB2BGR))
-            cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/plant.png", cv2.cvtColor(rgb_plant, cv2.COLOR_RGB2BGR))
+            cv2.imwrite("/maniRL/images/plant.png", cv2.cvtColor(rgb_plant, cv2.COLOR_RGB2BGR))
             self.tic = time.time()
 
         # Clean up
@@ -185,7 +187,7 @@ class MyBuddyEnv(gym.Env):
     def reset(self, seed=None):
         self.world._world.reset()
         # initial_angles = np.deg2rad([-90, np.random.uniform(-110, 40), 120, -120, 0, 0]) # -90, 30, 120, -120, 0, 0
-        init_angles = np.deg2rad([-90, 0, 120, -120, 0, 0])
+        init_angles = np.deg2rad([-90, np.random.uniform(0, 40), 120, -120, 0, 0])
         self.robot.send_angles(0, init_angles, degrees=False)
         for i in range(30):
             self.world._world.step()
