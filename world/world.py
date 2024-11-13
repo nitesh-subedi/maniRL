@@ -50,11 +50,6 @@ class SimulationEnv:
         import omni.syntheticdata._syntheticdata as sd
         self.rgb_rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(sd.SensorType.Rgb.name)
         self.depth_rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(sd.SensorType.Depth.name)
-        # Setup annotators that will report groundtruth
-        self.rgb = rep.AnnotatorRegistry.get_annotator("LdrColorSDIsaacConvertRGBAToRGB")
-        self.depth = rep.AnnotatorRegistry.get_annotator("DepthLinearized")
-        self.rgb.attach(self.rgb_camera_render_product)
-        self.depth.attach(self.depth_camera_render_product)
 
 
         import omni.graph.core as og
@@ -82,6 +77,20 @@ class SimulationEnv:
 
         # Evaluate the graph after creating nodes and setting values
         og.Controller.evaluate(texture_graph_handle)
+        rgb_device_to_host_buffer = texture_list_of_nodes[2]
+        depth_device_to_host_buffer = texture_list_of_nodes[3]
+        rgb_new_render_var = rgb_device_to_host_buffer.get_attribute("outputs:renderVar").get(on_gpu=True)
+        depth_new_render_var = depth_device_to_host_buffer.get_attribute("outputs:renderVar").get(on_gpu=True)
+        print(f"New render var for RGB: {rgb_new_render_var}")
+        print(f"New render var for Depth: {depth_new_render_var}")
+
+        # Setup annotators that will report groundtruth
+        self.rgb = rep.AnnotatorRegistry.get_annotator("LdrColorSDIsaacConvertRGBAToRGB")
+        self.depth = rep.AnnotatorRegistry.get_annotator("DepthLinearized")
+        self.rgb.initialize(renderVar=rgb_new_render_var)
+        self.depth.initialize(renderVar=depth_new_render_var)
+        self.rgb.attach(self.rgb_camera_render_product)
+        self.depth.attach(self.depth_camera_render_product)
     
 
     def make_ground_plane_small(self):
