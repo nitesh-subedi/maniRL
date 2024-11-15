@@ -20,7 +20,7 @@ import numpy as np
 set_random_seed(42)
 # Argument parsing
 parser = argparse.ArgumentParser()
-parser.add_argument('--run_name', type=str, default="SAC_high_level_v14", help='Name of the run')
+parser.add_argument('--run_name', type=str, default="SAC_high_level_v19", help='Name of the run')
 parser.add_argument('--load_model', type=str, help='Path to the model to load', default="")
 args = parser.parse_args()
 
@@ -96,7 +96,7 @@ CONFIG = {
 }
 
 
-log_dir = f"/maniRL//new_obs_results/{name}"
+log_dir = f"/maniRL/new_obs_results/{name}"
 os.makedirs(log_dir, exist_ok=True)
 
 my_env = maniEnv(config=CONFIG)
@@ -117,8 +117,8 @@ action_noise = NormalActionNoise(mean=np.zeros(action_n), sigma=0.2 * np.ones(ac
 if load_model and os.path.exists(load_model):
     model = SAC.load(load_model, env=my_env, verbose=1,
                      buffer_size=100000,
-                    batch_size=512,
-                    gamma=0.8,
+                    batch_size=256,
+                    gamma=0.9,
                     # action_noise=action_noise,
                     device="cuda:0",
                     tensorboard_log=f"{log_dir}/tensorboard")

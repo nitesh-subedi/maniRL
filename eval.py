@@ -15,7 +15,7 @@ CONFIG = {
 }
 
 # Choose the policy path to visualize
-policy_path = "/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/new_obs_results/SAC_multi_v22/mybuddy_policy_checkpoint_310000_steps.zip"
+policy_path = "/maniRL/new_obs_results/SAC_high_level_v17/mybuddy_policy_checkpoint_160000_steps.zip"
 
 my_env = maniEnv(config=CONFIG)
 model = SAC.load(policy_path)

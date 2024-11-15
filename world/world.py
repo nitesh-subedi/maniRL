@@ -167,6 +167,8 @@ class SimulationEnv:
         # contact_offset_attr.Set(0.001)
 
         self.attach_cylinder_to_ground(prim_dict)
+        key, self.stem_prim = list(prim_dict.items())[0] # Step prim path
+
 
     def make_deformable(self, prim_dict, simulation_resolution=10):
         key, value = list(prim_dict.items())[0]
@@ -186,7 +188,10 @@ class SimulationEnv:
                 simulation_hexahedral_resolution=simulation_resolution,
                 self_collision=False,
             )
-
+        
+    def get_stem_location(self):
+        return self.stem_prim.GetAttribute("xformOp:translate").Get()
+       
 
     def attach_cylinder_to_ground(self, prim_dict):
         key, value = list(prim_dict.items())[0]

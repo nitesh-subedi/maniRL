@@ -6,10 +6,7 @@ from isaacsim import SimulationApp
 import time
 from collections import deque
 import gc
-from mybuddy.utils import DepthEstimator
-from memory_profiler import profile
 import ikpy.chain
-import sys
 import os
 
 
@@ -75,10 +72,10 @@ class MyBuddyEnv(gym.Env):
         })
         self.last_angles = np.zeros(6)
 
-        action_low = np.array([-0.05, -0.35, 0.01, -np.pi, -np.pi, -np.pi])
-        action_high = np.array([0.3, -0.15, 0.35, np.pi, np.pi, np.pi])
-        self.action_mean = (action_low + action_high) / 2
-        self.action_scale = (action_high - action_low) / 2
+        self.action_low = np.array([0, -0.35, 0.05, -np.pi, -np.pi, -np.pi])
+        self.action_high = np.array([0.3, -0.15, 0.2, np.pi, np.pi, np.pi])
+        self.action_mean = (self.action_low + self.action_high) / 2
+        self.action_scale = (self.action_high - self.action_low) / 2
 
 
         self.episode_length = 0
@@ -91,20 +88,26 @@ class MyBuddyEnv(gym.Env):
         self.first_call = True
         self.ikchain = ikpy.chain.Chain.from_urdf_file("/isaac_sim_assets/urdf/urdf.urdf")
         os.makedirs("/maniRL/images", exist_ok=True)
+        self.last_actions = np.zeros(6)
     
     def denormalize_action(self, normalized_action):
         return (normalized_action * self.action_scale) + self.action_mean
 
     def step(self, action):
-        action = np.clip(action, -1.0, 1.0)
-        action = self.denormalize_action(action)
+        action = np.clip(action, -1.0, 1.0) * 0.1
+        # action = self.denormalize_action(action)
+        action = self.last_actions + action
+        action = np.clip(action, self.action_low, self.action_high)
         # Target position and orientation
         target_position = action[:3]
         target_orientation = action[3:]
+        self.ee_pose = target_position.copy()
 
         # Compute joint angles using inverse kinematics
         angles = self.ikchain.inverse_kinematics(target_position, target_orientation)[1:]
         self.robot.send_angles(0, angles, degrees=False)
+        self.last_actions = action
+        print(self.world.get_stem_location())
         # if time.time() - self.tic > 5.0:
         #     real_position =  self.ikchain.forward_kinematics(np.append(0, angles))
         #     print("The target position is : ", target_position)
@@ -156,7 +159,7 @@ class MyBuddyEnv(gym.Env):
         unwanted_pixels = np.sum(depth_for_plant)
 
         # Calculate reward
-        reward = -(unwanted_pixels / 63000) * 5
+        reward = -(unwanted_pixels / 63000) * 2
         # reward += (wanted_pixels / 2500)
 
         # Apply depth masks to the RGB image
@@ -173,6 +176,8 @@ class MyBuddyEnv(gym.Env):
             cv2.imwrite("/maniRL/images/plant.png", cv2.cvtColor(rgb_plant, cv2.COLOR_RGB2BGR))
             self.tic = time.time()
 
+        reward -= self.ee_pose[0] * 5
+
         # Clean up
         del unwanted_pixels, plant_mask, depth_for_plant, rgb_plant
         return reward
@@ -187,7 +192,7 @@ class MyBuddyEnv(gym.Env):
     def reset(self, seed=None):
         self.world._world.reset()
         # initial_angles = np.deg2rad([-90, np.random.uniform(-110, 40), 120, -120, 0, 0]) # -90, 30, 120, -120, 0, 0
-        init_angles = np.deg2rad([-90, np.random.uniform(0, 40), 120, -120, 0, 0])
+        init_angles = np.deg2rad([-90, np.random.uniform(0, 30), 120, -120, 0, 0])
         self.robot.send_angles(0, init_angles, degrees=False)
         for i in range(30):
             self.world._world.step()
@@ -198,6 +203,7 @@ class MyBuddyEnv(gym.Env):
         self.total_visits = 0
         ee_location = np.array(self.robot.get_ee_position())
         rgb_obs, depth_obs = self.get_observation()
+        self.last_actions = np.zeros(6)
         observation = {
             'image': rgb_obs,
             'end_effector_pos': ee_location
