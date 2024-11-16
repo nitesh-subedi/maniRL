@@ -107,7 +107,7 @@ class MyBuddyEnv(gym.Env):
         angles = self.ikchain.inverse_kinematics(target_position, target_orientation)[1:]
         self.robot.send_angles(0, angles, degrees=False)
         self.last_actions = action
-        print(self.world.get_stem_location())
+        # print(self.world.get_stem_location())
         # if time.time() - self.tic > 5.0:
         #     real_position =  self.ikchain.forward_kinematics(np.append(0, angles))
         #     print("The target position is : ", target_position)
@@ -143,7 +143,7 @@ class MyBuddyEnv(gym.Env):
 
     def get_reward(self, depth_obs, rgb_obs):
         # Resize depth_obs to match rgb_obs dimensions
-        depth_obs_resized = cv2.resize(depth_obs, (rgb_obs.shape[1], rgb_obs.shape[0]), interpolation=cv2.INTER_NEAREST)
+        rgb_obs_resized = cv2.resize(rgb_obs, (depth_obs.shape[1], depth_obs.shape[0]), interpolation=cv2.INTER_NEAREST)
 
         # Define cube and plant masks
         # cube_mask = (depth_obs_resized >= 0.28) & (depth_obs_resized <= 0.44)
@@ -152,25 +152,25 @@ class MyBuddyEnv(gym.Env):
         # depth_for_cube[cube_mask] = 1
         # wanted_pixels = np.sum(depth_for_cube)
 
-        plant_mask = (depth_obs_resized >= 0.01) & (depth_obs_resized <= 0.27)
-        depth_for_plant = depth_obs_resized.copy()
+        plant_mask = (depth_obs >= 0.01) & (depth_obs <= 0.27)
+        depth_for_plant = depth_obs.copy()
         depth_for_plant[~plant_mask] = 0
         depth_for_plant[plant_mask] = 1
         unwanted_pixels = np.sum(depth_for_plant)
 
         # Calculate reward
-        reward = -(unwanted_pixels / 63000) * 2
+        reward = -(unwanted_pixels / 63000) * 3
         # reward += (wanted_pixels / 2500)
 
         # Apply depth masks to the RGB image
         # rgb_cube = rgb_obs.copy()
         # rgb_cube[~cube_mask] = 0
 
-        rgb_plant = rgb_obs.copy()
+        rgb_plant = rgb_obs_resized.copy()
         rgb_plant[~plant_mask] = 0
 
         # Save images at intervals
-        if time.time() - self.tic > 5.0:
+        if time.time() - self.tic > 2.0:
             # print(-(unwanted_pixels / 63000) * 2, wanted_pixels / 2500)
             # cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/cube.png", cv2.cvtColor(rgb_cube, cv2.COLOR_RGB2BGR))
             cv2.imwrite("/maniRL/images/plant.png", cv2.cvtColor(rgb_plant, cv2.COLOR_RGB2BGR))

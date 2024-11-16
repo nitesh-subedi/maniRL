@@ -9,6 +9,7 @@ from omni.isaac.core import PhysicsContext
 from omni.isaac.core.utils.stage import add_reference_to_stage
 import omni.isaac.core.utils.prims as prims_utils
 import omni.replicator.core as rep
+from omni.isaac.core.prims import XFormPrim
 
 
 class SimulationEnv:
@@ -167,7 +168,18 @@ class SimulationEnv:
         # contact_offset_attr.Set(0.001)
 
         self.attach_cylinder_to_ground(prim_dict)
-        key, self.stem_prim = list(prim_dict.items())[0] # Step prim path
+        # key, self.stem_prim = list(prim_dict.items())[0] # Step prim path
+        # # print(f"Stem prim path: {self.stem_prim.GetPath()}")
+        # self.poif = XFormPrim("/Tracker1", position = Gf.Vec3d(0.077, 0.09, 0.36))
+        # # Attach the self.poif to the stem
+        # attachment_path = self.stem_prim.GetPath().AppendElementString(f"attachment_tracker")
+        # stalk_attachment = PhysxSchema.PhysxPhysicsAttachment.Define(self.stage, attachment_path)
+        # stalk_attachment.GetActor0Rel().SetTargets([self.stem_prim.GetPath()])
+        # stalk_attachment.GetActor1Rel().SetTargets(["/Tracker1"])
+        # auto_attachment_api = PhysxSchema.PhysxAutoAttachmentAPI.Apply(stalk_attachment.GetPrim())
+        # Set attributes to reduce initial movement and gap
+        # auto_attachment_api.GetPrim().GetAttribute('physxAutoAttachment:deformableVertexOverlapOffset').Set(0.01)
+        
 
 
     def make_deformable(self, prim_dict, simulation_resolution=10):
@@ -190,7 +202,8 @@ class SimulationEnv:
             )
         
     def get_stem_location(self):
-        return self.stem_prim.GetAttribute("xformOp:translate").Get()
+        position, orientation = self.poif.get_world_pose()
+        return position
        
 
     def attach_cylinder_to_ground(self, prim_dict):

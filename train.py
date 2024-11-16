@@ -20,7 +20,7 @@ import numpy as np
 set_random_seed(42)
 # Argument parsing
 parser = argparse.ArgumentParser()
-parser.add_argument('--run_name', type=str, default="SAC_high_level_v19", help='Name of the run')
+parser.add_argument('--run_name', type=str, default="SAC_high_level_v20", help='Name of the run')
 parser.add_argument('--load_model', type=str, help='Path to the model to load', default="")
 args = parser.parse_args()
 
@@ -77,7 +77,7 @@ name = run_name
 run = wandb.init(
     project="New_formulation",
     sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
-    monitor_gym=True,  # auto-upload the videos of agents playing the game
+    monitor_gym=False,  # auto-upload the videos of agents playing the game
     save_code=False,  # optional
     id=name,  # optional,
 )
