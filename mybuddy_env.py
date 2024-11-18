@@ -76,7 +76,7 @@ class MyBuddyEnv(gym.Env):
         # self.ikchain = ikpy.chain.Chain.from_urdf_file("/isaac_sim_assets/urdf/urdf.urdf")
         os.makedirs("/maniRL/images", exist_ok=True)
         self.last_actions = np.zeros(2)
-        self.min_angles = np.deg2rad([-120, -10])
+        self.min_angles = np.deg2rad([-100, -10])
         self.max_angles = np.deg2rad([-80, 40])
 
 
@@ -84,15 +84,15 @@ class MyBuddyEnv(gym.Env):
         action = np.clip(action, -1.0, 1.0) * 0.1
         # action = self.denormalize_action(action)
         action = self.last_actions + action
-        print(np.rad2deg(action))
+        # print(np.rad2deg(action))
         action = np.clip(action, self.min_angles, self.max_angles)
 
         self.robot.send_angles(0, np.append(action, np.deg2rad([120, -120, 0, 0])), degrees=False)
         self.last_actions = action
         self.world._world.step()
-        rgb_obs, depth_obs = self.get_observation()
+        rgb_obs = self.get_observation()
         ee_location = np.array(self.robot.get_ee_position())
-        reward = self.get_reward(depth_obs, rgb_obs)
+        reward = self.get_reward(rgb_obs)
         # int_reward = self.get_intrinsic_reward(action)
         # Combine rewards
         total_reward = reward  # + int_reward
@@ -117,49 +117,18 @@ class MyBuddyEnv(gym.Env):
         return rgb_obs
 
 
-    def get_reward(self, rgb_obs):
-        # Load and preprocess the image
-        img = cv2.cvtColor(rgb_obs, cv2.COLOR_BGR2RGB)
-        input_batch = self.depth_estimator.remove_nearest_objects(img)
-        # # Resize depth_obs to match rgb_obs dimensions
-        # rgb_obs_resized = cv2.resize(rgb_obs, (depth_obs.shape[1], depth_obs.shape[0]), interpolation=cv2.INTER_NEAREST)
-
-        # # Define cube and plant masks
-        # # cube_mask = (depth_obs_resized >= 0.28) & (depth_obs_resized <= 0.44)
-        # # depth_for_cube = depth_obs_resized.copy()
-        # # depth_for_cube[~cube_mask] = 0
-        # # depth_for_cube[cube_mask] = 1
-        # # wanted_pixels = np.sum(depth_for_cube)
-
-        # plant_mask = (depth_obs >= 0.01) & (depth_obs <= 0.27)
-        # depth_for_plant = depth_obs.copy()
-        # depth_for_plant[~plant_mask] = 0
-        # depth_for_plant[plant_mask] = 1
-        # unwanted_pixels = np.sum(depth_for_plant)
-
-        # # Calculate reward
-        # reward = -(unwanted_pixels / 63000) * 3
-        # # reward += (wanted_pixels / 2500)
-
-        # # Apply depth masks to the RGB image
-        # # rgb_cube = rgb_obs.copy()
-        # # rgb_cube[~cube_mask] = 0
-
-        # rgb_plant = rgb_obs_resized.copy()
-        # rgb_plant[~plant_mask] = 0
-
-        # # Save images at intervals
-        # if time.time() - self.tic > 2.0:
-        #     # print(-(unwanted_pixels / 63000) * 2, wanted_pixels / 2500)
-        #     # cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/cube.png", cv2.cvtColor(rgb_cube, cv2.COLOR_RGB2BGR))
-        #     cv2.imwrite("/maniRL/images/plant.png", cv2.cvtColor(rgb_plant, cv2.COLOR_RGB2BGR))
-        #     self.tic = time.time()
-
-        # Clean up
-        del unwanted_pixels, plant_mask, depth_for_plant, rgb_plant
+    def get_reward(self, obs):
+        # Compute reward based on the observation
+        unwanted_pixels, result = self.depth_estimator.remove_nearest_objects(obs, threshold=0.6)
+        if time.time() - self.tic > 2:
+            self.tic = time.time()
+            cv2.imwrite("/maniRL/images/depth_output.jpg", result)
+            cv2.imwrite("/maniRL/images/real_output.jpg", cv2.cvtColor(obs, cv2.COLOR_RGB2BGR))
+        # More reward if less unwanted pixels
+        reward = - (unwanted_pixels / 60000)
+        del unwanted_pixels
+        del result
         return reward
-
-
     
     def is_truncated(self):
         if self.world._world.current_time_step_index - self._steps_after_reset >= self._max_episode_length:
@@ -179,7 +148,7 @@ class MyBuddyEnv(gym.Env):
         self.observing_cube = False
         self.total_visits = 0
         ee_location = np.array(self.robot.get_ee_position())
-        rgb_obs, depth_obs = self.get_observation()
+        rgb_obs = self.get_observation()
         self.last_actions = np.zeros(2)
         observation = {
             'image': rgb_obs,
