@@ -4,10 +4,9 @@ import numpy as np
 import cv2
 from isaacsim import SimulationApp
 import time
-from collections import deque
 import gc
-import ikpy.chain
 import os
+from mybuddy.utils import DepthEstimator
 
 
 class MyBuddyEnv(gym.Env):
@@ -19,7 +18,7 @@ class MyBuddyEnv(gym.Env):
                  seed=0,
                  config={"headless": True, "anti_aliasing": 0}) -> None:
         super().__init__()
-        # self.depth_estimator = DepthEstimator()
+        self.depth_estimator = DepthEstimator()
         self._simulation_app = SimulationApp(launch_config=config)
         self._simulation_app.set_setting("/app/window/drawMouse", True)
         self._simulation_app.set_setting("/app/livestream/proto", "ws")
@@ -50,7 +49,7 @@ class MyBuddyEnv(gym.Env):
         self.world._world.step()
         self._simulation_app.update()
 
-        self.action_space = spaces.Box(low=-1, high=1, shape=(6,), dtype=np.float32)
+        self.action_space = spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)
         image_obs_space = spaces.Box(
             low=0,
             high=255,
@@ -70,49 +69,26 @@ class MyBuddyEnv(gym.Env):
             'image': image_obs_space,
             'end_effector_pos': end_effector_space
         })
-        self.last_angles = np.zeros(6)
-
-        self.action_low = np.array([0, -0.35, 0.05, -np.pi, -np.pi, -np.pi])
-        self.action_high = np.array([0.3, -0.15, 0.2, np.pi, np.pi, np.pi])
-        self.action_mean = (self.action_low + self.action_high) / 2
-        self.action_scale = (self.action_high - self.action_low) / 2
-
-
         self.episode_length = 0
         self.initial_angles = np.deg2rad([-90, -110, 120, -120, 0, 0]) # -90, 30, 120, -120, 0, 0
         # Initialize list to store previous actions for intrinsic reward calculation
-        max_length = 10000
-        self.previous_actions = deque(maxlen=max_length)
         self.tic = time.time()
-        self.last_reward = 0
-        self.first_call = True
-        self.ikchain = ikpy.chain.Chain.from_urdf_file("/isaac_sim_assets/urdf/urdf.urdf")
+        # self.ikchain = ikpy.chain.Chain.from_urdf_file("/isaac_sim_assets/urdf/urdf.urdf")
         os.makedirs("/maniRL/images", exist_ok=True)
-        self.last_actions = np.zeros(6)
-    
-    def denormalize_action(self, normalized_action):
-        return (normalized_action * self.action_scale) + self.action_mean
+        self.last_actions = np.zeros(2)
+        self.min_angles = np.deg2rad([-120, -10])
+        self.max_angles = np.deg2rad([-80, 40])
+
 
     def step(self, action):
         action = np.clip(action, -1.0, 1.0) * 0.1
         # action = self.denormalize_action(action)
         action = self.last_actions + action
-        action = np.clip(action, self.action_low, self.action_high)
-        # Target position and orientation
-        target_position = action[:3]
-        target_orientation = action[3:]
-        self.ee_pose = target_position.copy()
+        print(np.rad2deg(action))
+        action = np.clip(action, self.min_angles, self.max_angles)
 
-        # Compute joint angles using inverse kinematics
-        angles = self.ikchain.inverse_kinematics(target_position, target_orientation)[1:]
-        self.robot.send_angles(0, angles, degrees=False)
+        self.robot.send_angles(0, np.append(action, np.deg2rad([120, -120, 0, 0])), degrees=False)
         self.last_actions = action
-        # print(self.world.get_stem_location())
-        # if time.time() - self.tic > 5.0:
-        #     real_position =  self.ikchain.forward_kinematics(np.append(0, angles))
-        #     print("The target position is : ", target_position)
-        #     print("The real position is : ", real_position[:3, 3])
-            # self.tic = time.time()
         self.world._world.step()
         rgb_obs, depth_obs = self.get_observation()
         ee_location = np.array(self.robot.get_ee_position())
@@ -137,46 +113,47 @@ class MyBuddyEnv(gym.Env):
         return False
     
     def get_observation(self):
-        rgb_obs, depth_obs = self.world.get_image()
-        return rgb_obs, depth_obs
+        rgb_obs = self.world.get_image()
+        return rgb_obs
 
 
-    def get_reward(self, depth_obs, rgb_obs):
-        # Resize depth_obs to match rgb_obs dimensions
-        rgb_obs_resized = cv2.resize(rgb_obs, (depth_obs.shape[1], depth_obs.shape[0]), interpolation=cv2.INTER_NEAREST)
+    def get_reward(self, rgb_obs):
+        # Load and preprocess the image
+        img = cv2.cvtColor(rgb_obs, cv2.COLOR_BGR2RGB)
+        input_batch = self.depth_estimator.remove_nearest_objects(img)
+        # # Resize depth_obs to match rgb_obs dimensions
+        # rgb_obs_resized = cv2.resize(rgb_obs, (depth_obs.shape[1], depth_obs.shape[0]), interpolation=cv2.INTER_NEAREST)
 
-        # Define cube and plant masks
-        # cube_mask = (depth_obs_resized >= 0.28) & (depth_obs_resized <= 0.44)
-        # depth_for_cube = depth_obs_resized.copy()
-        # depth_for_cube[~cube_mask] = 0
-        # depth_for_cube[cube_mask] = 1
-        # wanted_pixels = np.sum(depth_for_cube)
+        # # Define cube and plant masks
+        # # cube_mask = (depth_obs_resized >= 0.28) & (depth_obs_resized <= 0.44)
+        # # depth_for_cube = depth_obs_resized.copy()
+        # # depth_for_cube[~cube_mask] = 0
+        # # depth_for_cube[cube_mask] = 1
+        # # wanted_pixels = np.sum(depth_for_cube)
 
-        plant_mask = (depth_obs >= 0.01) & (depth_obs <= 0.27)
-        depth_for_plant = depth_obs.copy()
-        depth_for_plant[~plant_mask] = 0
-        depth_for_plant[plant_mask] = 1
-        unwanted_pixels = np.sum(depth_for_plant)
+        # plant_mask = (depth_obs >= 0.01) & (depth_obs <= 0.27)
+        # depth_for_plant = depth_obs.copy()
+        # depth_for_plant[~plant_mask] = 0
+        # depth_for_plant[plant_mask] = 1
+        # unwanted_pixels = np.sum(depth_for_plant)
 
-        # Calculate reward
-        reward = -(unwanted_pixels / 63000) * 3
-        # reward += (wanted_pixels / 2500)
+        # # Calculate reward
+        # reward = -(unwanted_pixels / 63000) * 3
+        # # reward += (wanted_pixels / 2500)
 
-        # Apply depth masks to the RGB image
-        # rgb_cube = rgb_obs.copy()
-        # rgb_cube[~cube_mask] = 0
+        # # Apply depth masks to the RGB image
+        # # rgb_cube = rgb_obs.copy()
+        # # rgb_cube[~cube_mask] = 0
 
-        rgb_plant = rgb_obs_resized.copy()
-        rgb_plant[~plant_mask] = 0
+        # rgb_plant = rgb_obs_resized.copy()
+        # rgb_plant[~plant_mask] = 0
 
-        # Save images at intervals
-        if time.time() - self.tic > 2.0:
-            # print(-(unwanted_pixels / 63000) * 2, wanted_pixels / 2500)
-            # cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/cube.png", cv2.cvtColor(rgb_cube, cv2.COLOR_RGB2BGR))
-            cv2.imwrite("/maniRL/images/plant.png", cv2.cvtColor(rgb_plant, cv2.COLOR_RGB2BGR))
-            self.tic = time.time()
-
-        reward -= self.ee_pose[0] * 5
+        # # Save images at intervals
+        # if time.time() - self.tic > 2.0:
+        #     # print(-(unwanted_pixels / 63000) * 2, wanted_pixels / 2500)
+        #     # cv2.imwrite("/home/nitesh/.local/share/ov/pkg/isaac-sim-4.0.0/maniRL/images/cube.png", cv2.cvtColor(rgb_cube, cv2.COLOR_RGB2BGR))
+        #     cv2.imwrite("/maniRL/images/plant.png", cv2.cvtColor(rgb_plant, cv2.COLOR_RGB2BGR))
+        #     self.tic = time.time()
 
         # Clean up
         del unwanted_pixels, plant_mask, depth_for_plant, rgb_plant
@@ -192,7 +169,7 @@ class MyBuddyEnv(gym.Env):
     def reset(self, seed=None):
         self.world._world.reset()
         # initial_angles = np.deg2rad([-90, np.random.uniform(-110, 40), 120, -120, 0, 0]) # -90, 30, 120, -120, 0, 0
-        init_angles = np.deg2rad([-90, np.random.uniform(0, 30), 120, -120, 0, 0])
+        init_angles = np.deg2rad([-90, np.random.uniform(-20, 30), 120, -120, 0, 0])
         self.robot.send_angles(0, init_angles, degrees=False)
         for i in range(30):
             self.world._world.step()
@@ -203,7 +180,7 @@ class MyBuddyEnv(gym.Env):
         self.total_visits = 0
         ee_location = np.array(self.robot.get_ee_position())
         rgb_obs, depth_obs = self.get_observation()
-        self.last_actions = np.zeros(6)
+        self.last_actions = np.zeros(2)
         observation = {
             'image': rgb_obs,
             'end_effector_pos': ee_location
@@ -221,31 +198,4 @@ class MyBuddyEnv(gym.Env):
         np.random.seed(seed)
         return [seed]
 
-    def get_intrinsic_reward(self, action):
-        decay_factor = 0.99
-
-        if not self.previous_actions:
-            intrinsic_reward = 10.0
-        else:
-            prev_actions = np.array(self.previous_actions)
-            
-            # Compute Euclidean distances between the current action and all previous actions
-            distances = np.linalg.norm(prev_actions - action, axis=1)
-            
-            # Generate decay weights for all previous actions
-            weights = decay_factor ** np.arange(len(self.previous_actions) - 1, -1, -1)
-            
-            # Compute weighted distances
-            weighted_distances = weights * distances
-            
-            # Find the minimum weighted distance
-            min_weighted_distance = np.min(weighted_distances)
-            
-            # Compute intrinsic reward
-            intrinsic_reward = 1.0 / (1.0 + min_weighted_distance) * 10.0
-
-        # Append current action to previous actions
-        self.previous_actions.append(action)
-        
-        return intrinsic_reward
 

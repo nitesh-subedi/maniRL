@@ -337,7 +337,7 @@ class SimulationEnv:
         orient_attr.Set(quaternion)
 
     def get_image(self):
-        return self.rgb.get_data()["data"], self.depth.get_data()
+        return self.rgb.get_data()["data"] #, self.depth.get_data()
     
     def get_ee_image(self):
         return self.ee_camera.get_rgba()[:, :, :3]
