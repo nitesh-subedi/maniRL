@@ -20,8 +20,8 @@ import numpy as np
 set_random_seed(42)
 # Argument parsing
 parser = argparse.ArgumentParser()
-parser.add_argument('--run_name', type=str, default="SAC_high_level_v37", help='Name of the run')
-parser.add_argument('--load_model', type=str, help='Path to the model to load', default="")
+parser.add_argument('--run_name', type=str, default="SAC_high_level_v39", help='Name of the run')
+parser.add_argument('--load_model', type=str, help='Path to the model to load', default="/maniRL/new_obs_results/SAC_multi_v36/mybuddy_policy_checkpoint_100000_steps.zip")
 args = parser.parse_args()
 
 run_name = args.run_name
