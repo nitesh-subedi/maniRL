@@ -82,7 +82,7 @@ class MyBuddyEnv(gym.Env):
         self.last_angles = self.initial_angles[:2]
 
     def step(self, action):
-        action = np.clip(action, -1.0, 1.0) * 0.1
+        action = np.clip(action, -1.0, 1.0) * 0.05
         action = self.last_angles + action
         action = np.clip(action, self.min_angles, self.max_angles)
         # print(np.rad2deg(action))
