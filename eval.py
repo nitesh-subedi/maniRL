@@ -16,7 +16,7 @@ CONFIG = {
 
 # Choose the policy path to visualize
 # policy_path = "/maniRL/new_obs_results/SAC_multi_v36/mybuddy_policy_checkpoint_100000_steps.zip"
-policy_path = "/maniRL/new_obs_results/SAC_high_level_v39/mybuddy_policy_checkpoint_30000_steps.zip"
+policy_path = "/maniRL/new_obs_results/SAC_high_level_v50/mybuddy_policy_checkpoint_80000_steps.zip"
 
 my_env = maniEnv(config=CONFIG)
 model = SAC.load(policy_path)

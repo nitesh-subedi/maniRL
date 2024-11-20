@@ -10,6 +10,7 @@ from omni.isaac.core.utils.stage import add_reference_to_stage
 import omni.isaac.core.utils.prims as prims_utils
 import omni.replicator.core as rep
 from omni.isaac.core.prims import XFormPrim
+import asyncio
 
 
 class SimulationEnv:
@@ -51,10 +52,53 @@ class SimulationEnv:
         import omni.syntheticdata._syntheticdata as sd
         self.rgb_rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(sd.SensorType.Rgb.name)
         self.depth_rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(sd.SensorType.Depth.name)
+        asyncio.run(self.setup_and_evaluate())
 
 
+        # import omni.graph.core as og
+
+        # keys = og.Controller.Keys
+        # (texture_graph_handle, texture_list_of_nodes, _, _) = og.Controller.edit(
+        #     {"graph_path": "/push_graph", "evaluator_name": "execution"},
+        #     {
+        #         keys.CREATE_NODES: [
+        #             ("rgb_texture_to_device_buffer", "omni.syntheticdata.SdPostRenderVarTextureToBuffer"),
+        #             ("depth_texture_to_device_buffer", "omni.syntheticdata.SdPostRenderVarTextureToBuffer"),
+        #             ("rgb_device_to_host_buffer", "omni.syntheticdata.SdPostRenderVarToHost"),
+        #             ("depth_device_to_host_buffer", "omni.syntheticdata.SdPostRenderVarToHost"),
+        #         ],
+        #         keys.SET_VALUES: [
+        #             ("rgb_texture_to_device_buffer.inputs:renderVar", self.rgb_rv),
+        #             ("depth_texture_to_device_buffer.inputs:renderVar", self.depth_rv),
+        #         ],
+        #         keys.CONNECT: [
+        #             ("rgb_texture_to_device_buffer.outputs:renderVar", "rgb_device_to_host_buffer.inputs:renderVar"),
+        #             ("depth_texture_to_device_buffer.outputs:renderVar", "depth_device_to_host_buffer.inputs:renderVar"),
+        #         ],
+        #     },
+        # )
+
+        # # Evaluate the graph after creating nodes and setting values
+        # og.Controller.evaluate(texture_graph_handle)
+        # rgb_device_to_host_buffer = texture_list_of_nodes[2]
+        # depth_device_to_host_buffer = texture_list_of_nodes[3]
+        # rgb_new_render_var = rgb_device_to_host_buffer.get_attribute("outputs:renderVar").get(on_gpu=True)
+        # depth_new_render_var = depth_device_to_host_buffer.get_attribute("outputs:renderVar").get(on_gpu=True)
+        # print(f"New render var for RGB: {rgb_new_render_var}")
+        # print(f"New render var for Depth: {depth_new_render_var}")
+
+        # # Setup annotators that will report groundtruth
+        # self.rgb = rep.AnnotatorRegistry.get_annotator("LdrColorSDIsaacConvertRGBAToRGB")
+        # self.depth = rep.AnnotatorRegistry.get_annotator("DepthLinearized")
+        # self.rgb.renderVar = rgb_new_render_var
+        # self.depth.renderVar = depth_new_render_var
+        # # self.rgb.initialize(renderVar=rgb_new_render_var)
+        # # self.depth.initialize(renderVar=depth_new_render_var)
+        # self.rgb.attach(self.rgb_camera_render_product)
+        # self.depth.attach(self.depth_camera_render_product)
+    
+    async def setup_and_evaluate(self):
         import omni.graph.core as og
-
         keys = og.Controller.Keys
         (texture_graph_handle, texture_list_of_nodes, _, _) = og.Controller.edit(
             {"graph_path": "/push_graph", "evaluator_name": "execution"},
@@ -76,15 +120,17 @@ class SimulationEnv:
             },
         )
 
-        # Evaluate the graph after creating nodes and setting values
-        og.Controller.evaluate(texture_graph_handle)
+        # Await the evaluation
+        await og.Controller.evaluate(texture_graph_handle)
+        
+        # Retrieve attributes
         rgb_device_to_host_buffer = texture_list_of_nodes[2]
         depth_device_to_host_buffer = texture_list_of_nodes[3]
         rgb_new_render_var = rgb_device_to_host_buffer.get_attribute("outputs:renderVar").get(on_gpu=True)
         depth_new_render_var = depth_device_to_host_buffer.get_attribute("outputs:renderVar").get(on_gpu=True)
+        
         print(f"New render var for RGB: {rgb_new_render_var}")
         print(f"New render var for Depth: {depth_new_render_var}")
-
         # Setup annotators that will report groundtruth
         self.rgb = rep.AnnotatorRegistry.get_annotator("LdrColorSDIsaacConvertRGBAToRGB")
         self.depth = rep.AnnotatorRegistry.get_annotator("DepthLinearized")

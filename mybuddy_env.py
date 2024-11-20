@@ -46,7 +46,7 @@ class MyBuddyEnv(gym.Env):
         self.world._world.step()
         self._simulation_app.update()
 
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(5,), dtype=np.float32)
         image_obs_space = spaces.Box(
             low=0,
             high=255,
@@ -66,30 +66,32 @@ class MyBuddyEnv(gym.Env):
             'image': image_obs_space,
             'end_effector_pos': end_effector_space
         })
+        # self.observation_space = image_obs_space
 
         self.lower_red = np.array([90, 50, 50])
         self.upper_red = np.array([130, 255, 255])
 
         self.lower_green = np.array([35, 40, 40])
-        self.upper_green = np.array([85, 255, 255])
+        self.upper_green = np.array([85, 255, 255]) 
 
         self.episode_length = 0
-        self.initial_angles = np.deg2rad([-90, -110, 120, -120, 0, 0]) # -90, 30, 120, -120, 0, 0
+        self.initial_angles = np.deg2rad([-90, -110, 120, -120, 180, 0]) # -90, 30, 120, -120, 0, 0
         # Initialize list to store previous actions for intrinsic reward calculation
         self.tic = time.time()
-        self.max_angles = np.deg2rad([-80, 20])
-        self.min_angles = np.deg2rad([-100, -10])
-        self.last_angles = self.initial_angles[:2]
+        self.max_angles = np.deg2rad([-80, 30, 120, -90, 50+180])
+        self.min_angles = np.deg2rad([-100, -10, 100, -130, -50+180])
+        self.last_angles = self.initial_angles[:5]
 
     def step(self, action):
-        action = np.clip(action, -1.0, 1.0) * 0.05
+        action = np.clip(action, -1.0, 1.0) * 0.01
         action = self.last_angles + action
         action = np.clip(action, self.min_angles, self.max_angles)
         # print(np.rad2deg(action))
-        self.robot.send_angles(0, np.append(action, np.deg2rad([120, -120, 0, 0])), degrees=False)
+        self.robot.send_angles(0, np.append(action, 0.0), degrees=False)
         self.world._world.step()
         self.last_angles = action
         rgb_obs, depth_obs = self.get_observation()
+        rgb_obs = np.zeros_like(rgb_obs)
         ee_location = np.array(self.robot.get_ee_position())
         reward = self.get_reward(rgb_obs, depth_obs)
         # Combine rewards
@@ -108,25 +110,53 @@ class MyBuddyEnv(gym.Env):
         rgb, depth = self.world.get_image()
         return rgb, depth
 
+    # def get_reward(self, rgb_obs, depth_obs):
+    #     rgb_obs_resized = cv2.resize(rgb_obs, (depth_obs.shape[1], depth_obs.shape[0]), interpolation=cv2.INTER_NEAREST)
+
+    #     # Define cube and plant masks
+    #     cube_mask = (depth_obs >= 0.28) & (depth_obs <= 0.44)
+    #     depth_for_cube = depth_obs.copy()
+    #     depth_for_cube[~cube_mask] = 0
+    #     depth_for_cube[cube_mask] = 1
+    #     # wanted_pixels = np.sum(depth_for_cube)
+
+    #     plant_mask = (depth_obs >= 0.01) & (depth_obs <= 0.27)
+    #     depth_for_plant = depth_obs.copy()
+    #     depth_for_plant[~plant_mask] = 0
+    #     depth_for_plant[plant_mask] = 1
+    #     # unwanted_pixels = np.sum(depth_for_plant)
+
+    #     # Apply depth masks to the RGB image
+    #     rgb_cube = rgb_obs_resized.copy()
+    #     rgb_cube[~cube_mask] = 0
+
+    #     rgb_plant = rgb_obs_resized.copy()
+    #     rgb_plant[~plant_mask] = 0
+
+    #     # Wanted pixels is the number of pixels in the cube mask and rgbcube
+    #     wanted_pixels = np.sum(depth_for_cube & rgb_cube)
+    #     # Unwanted pixels is the number of pixels in the plant mask and rgbplant
+    #     unwanted_pixels = np.sum(depth_for_plant & rgb_plant)
+
+    #     # Calculate reward
+    #     reward = -(unwanted_pixels / 63000) * 3
+    #     reward += (wanted_pixels / 2500) * 0.1
+
+    #     # Save images at intervals
+    #     if time.time() - self.tic > 2.0:
+    #         print(-(unwanted_pixels / 63000) * 3, (wanted_pixels / 2500) * 0.1)
+    #         cv2.imwrite("/maniRL/images/cube.png", cv2.cvtColor(rgb_cube, cv2.COLOR_RGB2BGR))
+    #         cv2.imwrite("/maniRL/images/plant.png", cv2.cvtColor(rgb_plant, cv2.COLOR_RGB2BGR))
+    #         self.tic = time.time()
+    #     # Clean up
+    #     del unwanted_pixels, plant_mask, depth_for_plant, rgb_plant
+    #     return reward
     def get_reward(self, rgb_obs, depth_obs):
         rgb_obs_resized = cv2.resize(rgb_obs, (depth_obs.shape[1], depth_obs.shape[0]), interpolation=cv2.INTER_NEAREST)
 
         # Define cube and plant masks
         cube_mask = (depth_obs >= 0.28) & (depth_obs <= 0.44)
-        depth_for_cube = depth_obs.copy()
-        depth_for_cube[~cube_mask] = 0
-        depth_for_cube[cube_mask] = 1
-        wanted_pixels = np.sum(depth_for_cube)
-
         plant_mask = (depth_obs >= 0.01) & (depth_obs <= 0.27)
-        depth_for_plant = depth_obs.copy()
-        depth_for_plant[~plant_mask] = 0
-        depth_for_plant[plant_mask] = 1
-        unwanted_pixels = np.sum(depth_for_plant)
-
-        # Calculate reward
-        reward = -(unwanted_pixels / 63000) * 3
-        reward += (wanted_pixels / 2500) * 0.1
 
         # Apply depth masks to the RGB image
         rgb_cube = rgb_obs_resized.copy()
@@ -135,15 +165,30 @@ class MyBuddyEnv(gym.Env):
         rgb_plant = rgb_obs_resized.copy()
         rgb_plant[~plant_mask] = 0
 
+        # Ensure masks are boolean and apply them properly
+        cube_mask = cube_mask.astype(np.uint8)
+        plant_mask = plant_mask.astype(np.uint8)
+        rgb_cube_binary = (rgb_cube > 0).astype(np.uint8)
+        rgb_plant_binary = (rgb_plant > 0).astype(np.uint8)
+
+        # Calculate wanted and unwanted pixels
+        wanted_pixels = np.sum(cube_mask & cv2.cvtColor(rgb_cube_binary, cv2.COLOR_RGB2GRAY))
+        unwanted_pixels = np.sum(plant_mask & cv2.cvtColor(rgb_plant_binary, cv2.COLOR_RGB2GRAY))
+
+        # Calculate reward
+        reward = -(unwanted_pixels / 63000) * 3
+        reward += (wanted_pixels / 2500)
+
         # Save images at intervals
         if time.time() - self.tic > 2.0:
-            # print(-(unwanted_pixels / 63000) * 2, wanted_pixels / 2500)
+            print(-(unwanted_pixels / 63000) * 3, (wanted_pixels / 2500) * 0.1)
             cv2.imwrite("/maniRL/images/cube.png", cv2.cvtColor(rgb_cube, cv2.COLOR_RGB2BGR))
             cv2.imwrite("/maniRL/images/plant.png", cv2.cvtColor(rgb_plant, cv2.COLOR_RGB2BGR))
             self.tic = time.time()
         # Clean up
-        del unwanted_pixels, plant_mask, depth_for_plant, rgb_plant
+        del unwanted_pixels, plant_mask, rgb_plant
         return reward
+
 
 
     
@@ -155,13 +200,13 @@ class MyBuddyEnv(gym.Env):
     def reset(self, seed=None):
         self.world._world.reset()
         # initial_angles = np.deg2rad([-90, np.random.uniform(-110, 40), 120, -120, 0, 0]) # -90, 30, 120, -120, 0, 0
-        init_angles = np.deg2rad([-90, np.random.uniform(-60, 0), 120, -120, 0, 0])
+        init_angles = np.deg2rad([-90, np.random.uniform(-60, 0), 120, -120, 180, 0])
         self.robot.send_angles(0, init_angles, degrees=False)
         for i in range(30):
             self.world._world.step()
         self.world.goal_cube.set_world_pose([np.random.uniform(-0.02, 0.02), -0.4, 0.22], [0, 0, 0, 1])
         self.episode_length = 0
-        self.last_angles = init_angles[:2]
+        self.last_angles = init_angles[:5]
         # self.previous_actions = []
         self.w = {}
         self.observing_cube = False

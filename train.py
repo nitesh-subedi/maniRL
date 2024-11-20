@@ -20,8 +20,8 @@ import numpy as np
 set_random_seed(42)
 # Argument parsing
 parser = argparse.ArgumentParser()
-parser.add_argument('--run_name', type=str, default="SAC_high_level_v39", help='Name of the run')
-parser.add_argument('--load_model', type=str, help='Path to the model to load', default="/maniRL/new_obs_results/SAC_multi_v36/mybuddy_policy_checkpoint_100000_steps.zip")
+parser.add_argument('--run_name', type=str, default="SAC_high_level_v50", help='Name of the run')
+parser.add_argument('--load_model', type=str, help='Path to the model to load', default="")
 args = parser.parse_args()
 
 run_name = args.run_name
@@ -108,7 +108,8 @@ callback = CheckpointCallback(save_freq=10000, save_path=log_dir, name_prefix="m
 
 policy_kwargs = dict(activation_fn=torch.nn.ReLU, 
                      net_arch=dict(pi=[64, 64], qf=[400, 300]),
-                     features_extractor_class=CustomCombinedExtractor)
+                    #  features_extractor_class=CustomCombinedExtractor
+                     )
 action_n = my_env.action_space.shape[0]
 
 action_noise = NormalActionNoise(mean=np.zeros(action_n), sigma=0.2 * np.ones(action_n))
@@ -119,20 +120,20 @@ if load_model and os.path.exists(load_model):
                      buffer_size=100000,
                     batch_size=256,
                     gamma=0.9,
-                    # action_noise=action_noise,
+                    action_noise=action_noise,
                     device="cuda:0",
                     tensorboard_log=f"{log_dir}/tensorboard")
     print(f"Loaded model from {load_model}")
 else:
     model = SAC(
-        "MultiInputPolicy",
+        "CnnPolicy",
         my_env,
         verbose=1,
         policy_kwargs=policy_kwargs,
         buffer_size=100000,
         batch_size=256,
         gamma=0.9,
-        # action_noise=action_noise,
+        action_noise=action_noise,
         device="cuda:0",
         tensorboard_log=f"{log_dir}/tensorboard",
     )
