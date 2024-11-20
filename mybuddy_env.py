@@ -62,11 +62,11 @@ class MyBuddyEnv(gym.Env):
         )
 
         # # Combine both spaces using Tuple or Dict (depending on your needs)
-        self.observation_space = spaces.Dict({
-            'image': image_obs_space,
-            'end_effector_pos': end_effector_space
-        })
-        # self.observation_space = image_obs_space
+        # self.observation_space = spaces.Dict({
+        #     'image': image_obs_space,
+        #     'end_effector_pos': end_effector_space
+        # })
+        self.observation_space = image_obs_space
 
         self.lower_red = np.array([90, 50, 50])
         self.upper_red = np.array([130, 255, 255])
@@ -83,7 +83,7 @@ class MyBuddyEnv(gym.Env):
         self.last_angles = self.initial_angles[:5]
 
     def step(self, action):
-        action = np.clip(action, -1.0, 1.0) * 0.01
+        action = np.clip(action, -1.0, 1.0) * 0.1
         action = self.last_angles + action
         action = np.clip(action, self.min_angles, self.max_angles)
         # print(np.rad2deg(action))
@@ -91,8 +91,8 @@ class MyBuddyEnv(gym.Env):
         self.world._world.step()
         self.last_angles = action
         rgb_obs, depth_obs = self.get_observation()
-        rgb_obs = np.zeros_like(rgb_obs)
-        ee_location = np.array(self.robot.get_ee_position())
+        # rgb_obs = np.zeros_like(rgb_obs)
+        # ee_location = np.array(self.robot.get_ee_position())
         reward = self.get_reward(rgb_obs, depth_obs)
         # Combine rewards
         total_reward = reward #+ int_reward
@@ -100,11 +100,11 @@ class MyBuddyEnv(gym.Env):
         if self.episode_length % 100 == 0:
             gc.collect()
         truncated = self.is_truncated()
-        observation = {
-            'image': rgb_obs,
-            'end_effector_pos': ee_location
-        }
-        return observation, float(total_reward), False, truncated, {}
+        # observation = {
+        #     'image': rgb_obs,
+        #     'end_effector_pos': ee_location
+        # }
+        return rgb_obs, float(total_reward), False, truncated, {}
     
     def get_observation(self):
         rgb, depth = self.world.get_image()
@@ -204,20 +204,20 @@ class MyBuddyEnv(gym.Env):
         self.robot.send_angles(0, init_angles, degrees=False)
         for i in range(30):
             self.world._world.step()
-        self.world.goal_cube.set_world_pose([np.random.uniform(-0.02, 0.02), -0.4, 0.22], [0, 0, 0, 1])
+        self.world.goal_cube.set_world_pose([0.0, -0.4, np.random.uniform(0.15, 0.30)], [0, 0, 0, 1])
         self.episode_length = 0
         self.last_angles = init_angles[:5]
         # self.previous_actions = []
         self.w = {}
         self.observing_cube = False
         self.total_visits = 0
-        ee_location = np.array(self.robot.get_ee_position())
+        # ee_location = np.array(self.robot.get_ee_position())
         rgb_obs, depth_obs = self.get_observation()
-        observation = {
-            'image': rgb_obs,
-            'end_effector_pos': ee_location
-        }
-        return observation, {}
+        # observation = {
+        #     'image': rgb_obs,
+        #     'end_effector_pos': ee_location
+        # }
+        return rgb_obs, {}
 
     def render(self, mode="human"):
         pass
