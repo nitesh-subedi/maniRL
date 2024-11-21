@@ -15,12 +15,13 @@ import torchvision.models as models
 import gymnasium as gym
 from stable_baselines3.common.noise import NormalActionNoise
 import numpy as np
+# from policy_network import MultiActorPolicy
 
 
 set_random_seed(42)
 # Argument parsing
 parser = argparse.ArgumentParser()
-parser.add_argument('--run_name', type=str, default="SAC_high_level_v51", help='Name of the run')
+parser.add_argument('--run_name', type=str, default="SAC_high_level_v55", help='Name of the run')
 parser.add_argument('--load_model', type=str, help='Path to the model to load', default="")
 args = parser.parse_args()
 
@@ -126,7 +127,7 @@ if load_model and os.path.exists(load_model):
     print(f"Loaded model from {load_model}")
 else:
     model = SAC(
-        "CnnPolicy",
+        "MultiInputPolicy",
         my_env,
         verbose=1,
         policy_kwargs=policy_kwargs,
