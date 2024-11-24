@@ -1,7 +1,6 @@
 from mybuddy_env import MyBuddyEnv as maniEnv
-from stable_baselines3 import SAC, PPO
+from stable_baselines3 import SAC
 import time
-from stable_baselines3.sac.policies import SACPolicy
 
 CONFIG = {
     "width": 1280,
@@ -16,7 +15,7 @@ CONFIG = {
 
 # Choose the policy path to visualize
 # policy_path = "/maniRL/new_obs_results/SAC_multi_v36/mybuddy_policy_checkpoint_100000_steps.zip"
-policy_path = "/maniRL/new_obs_results/SAC_high_level_v54/mybuddy_policy_checkpoint_360000_steps.zip"
+policy_path = "/maniRL/new_obs_results/SAC_high_level_v60/mybuddy_policy_checkpoint_100000_steps.zip"
 
 my_env = maniEnv(config=CONFIG)
 model = SAC.load(policy_path)

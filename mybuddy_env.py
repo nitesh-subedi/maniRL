@@ -5,6 +5,8 @@ import cv2
 from isaacsim import SimulationApp
 import time
 import gc
+import ikpy.chain
+import os
 
 
 class MyBuddyEnv(gym.Env):
@@ -46,7 +48,7 @@ class MyBuddyEnv(gym.Env):
         self.world._world.step()
         self._simulation_app.update()
 
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(5,), dtype=np.float32)
+        self.action_space = spaces.Box(low=-1, high=1, shape=(6,), dtype=np.float32)
         image_obs_space = spaces.Box(
             low=0,
             high=255,
@@ -78,17 +80,25 @@ class MyBuddyEnv(gym.Env):
         self.initial_angles = np.deg2rad([-90, -110, 120, -120, 180, 0]) # -90, 30, 120, -120, 0, 0
         # Initialize list to store previous actions for intrinsic reward calculation
         self.tic = time.time()
-        self.max_angles = np.deg2rad([-80, 30, 120, -90, 50+180])
-        self.min_angles = np.deg2rad([-100, -10, 100, -130, -50+180])
+        self.max_angles = np.deg2rad([-80, 30, 120, -90, 50+180, 0])
+        self.min_angles = np.deg2rad([-100, -10, 100, -130, -50+180, 0])
         self.last_angles = self.initial_angles[:5]
         self.cube_min_max = np.array([-0.6, -0.4])
+        self.ikchain = ikpy.chain.Chain.from_urdf_file("/isaac_sim_assets/urdf/urdf.urdf")
+        os.makedirs("/maniRL/images", exist_ok=True)
+        self.action_low = np.array([-0.05, -0.35, 0.01, -np.pi, -np.pi, -np.pi])
+        self.action_high = np.array([0.3, -0.15, 0.35, np.pi, np.pi, np.pi])
+
 
     def step(self, action):
-        action = np.clip(action, -1.0, 1.0) * 0.01
-        action = self.last_angles + action
-        action = np.clip(action, self.min_angles, self.max_angles)
-        # print(np.rad2deg(action))
-        self.robot.send_angles(0, np.append(action, 0.0), degrees=False)
+        action = np.clip(action, -1.0, 1.0)
+        action = self.action_low + (action + 1.0) / 2.0 * (self.action_high - self.action_low)
+        target_position = action[:3]
+        target_orientation = action[3:]
+        # Compute joint angles using inverse kinematics
+        angles = self.ikchain.inverse_kinematics(target_position, target_orientation, orientation_mode="Z")[1:]
+        angles = np.clip(angles, self.min_angles, self.max_angles)
+        self.robot.send_angles(0, angles, degrees=False)
         self.world._world.step()
         self.last_angles = action
         rgb_obs, depth_obs = self.get_observation()
@@ -98,7 +108,7 @@ class MyBuddyEnv(gym.Env):
         # rgb_obs = rgb_obs + np.random.normal(-10, 50, rgb_obs.shape)
         ee_location = np.array(self.robot.get_ee_position())
         # print(ee_location)
-        reward = self.get_reward(rgb_obs, depth_obs)
+        reward = self.get_reward(rgb_obs, depth_obs, ee_location)
         # Combine rewards
         total_reward = reward #+ int_reward
         self.episode_length += 1
@@ -113,9 +123,9 @@ class MyBuddyEnv(gym.Env):
     
     def get_observation(self):
         rgb, depth = self.world.get_image()
-        return rgb, depth
+        return cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB), depth
 
-    def get_reward(self, rgb_obs, depth_obs):
+    def get_reward(self, rgb_obs, depth_obs, ee_location):
         rgb_obs_resized = cv2.resize(rgb_obs, (depth_obs.shape[1], depth_obs.shape[0]), interpolation=cv2.INTER_NEAREST)
 
         # Define cube and plant masks
@@ -149,6 +159,8 @@ class MyBuddyEnv(gym.Env):
             cv2.imwrite("/maniRL/images/cube.png", rgb_cube)
             cv2.imwrite("/maniRL/images/plant.png", rgb_plant)
             self.tic = time.time()
+        
+        reward -=ee_location[0] * 0.5
         # Clean up
         del unwanted_pixels, plant_mask, rgb_plant
         return reward
@@ -163,7 +175,7 @@ class MyBuddyEnv(gym.Env):
         # initial_angles = np.deg2rad([-90, np.random.uniform(-110, 40), 120, -120, 0, 0]) # -90, 30, 120, -120, 0, 0
         init_angles = np.deg2rad([-90, np.random.uniform(-10, 0), 120, -120, 180, 0])
         self.robot.send_angles(0, init_angles, degrees=False)
-        self.world.goal_cube.set_world_pose([np.random.uniform(-0.3, 0.3), 
+        self.world.goal_cube.set_world_pose([np.random.uniform(-0.2, 0.2), 
                                              -0.4, 
                                              np.random.uniform(0.22, 0.4)], [0, 0, 0, 1])
         for i in range(30):

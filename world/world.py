@@ -287,47 +287,12 @@ class SimulationEnv:
             )
         )
 
-    # def add_camera(self):
-    #     self.camera = Camera(
-    #         prim_path="/World/camera",
-    #         position=np.array([0.0, -0.04, 0.36]),
-    #         frequency=20,
-    #         resolution=(256, 256),
-    #     )
-    #     self.camera.initialize()
-    #     self.camera.set_focal_length(1.58)
-    #     self.camera.set_clipping_range(0.01, 1000000.0)
-
-    #     self.camera_prim = self.stage.GetPrimAtPath("/World/camera")
-    #     # Ensure the camera prim is valid
-    #     if not self.camera_prim:
-    #         raise ValueError("Camera prim does not exist at the specified path.")
-
-    #     # Add the orientation attribute if it doesn't exist
-    #     xform = UsdGeom.Xformable(self.camera_prim)
-    #     if not xform.GetXformOpOrderAttr().IsValid():
-    #         xform.AddOrientOp()
-
-    #     # Get the orientation attribute
-    #     orient_attr = self.camera_prim.GetAttribute("xformOp:orient")
-    #     # Define the quaternion components
-    #     w = 6.123233995736766e-17
-    #     x = -4.329780281177466e-17
-    #     y = 0.53833
-    #     z = 0.84274
-
-    #     # Create the quaternion using Gf.Quatd
-    #     quaternion = Gf.Quatd(w, Gf.Vec3d(x, y, z))
-
-    #     # Set the orientation attribute
-    #     orient_attr.Set(quaternion)
-
     def add_rgb_camera(self):
         RESOLUTION = (256, 256)
         self.rgb_camera = rep.create.camera(
             position=(0.0, -0.04, 0.36),
             rotation=(0, 0, 90),
-            focal_length=15.8,
+            focal_length=11.8,
             focus_distance = 0.0,
             clipping_range=(0.01, 1000000.0),
             f_stop = 0.0
@@ -339,7 +304,7 @@ class SimulationEnv:
         self.depth_camera = rep.create.camera(
             position=(0.0, -0.04, 0.36),
             rotation=(0, 0, 90),
-            focal_length=15.8,
+            focal_length=11.8,
             focus_distance = 0.0,
             clipping_range=(0.01, 1000000.0),
             f_stop = 0.0

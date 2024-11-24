@@ -21,7 +21,7 @@ import numpy as np
 set_random_seed(42)
 # Argument parsing
 parser = argparse.ArgumentParser()
-parser.add_argument('--run_name', type=str, default="SAC_high_level_v55", help='Name of the run')
+parser.add_argument('--run_name', type=str, default="SAC_high_level_v60", help='Name of the run')
 parser.add_argument('--load_model', type=str, help='Path to the model to load', default="")
 args = parser.parse_args()
 
@@ -108,7 +108,7 @@ total_timesteps = 1000000
 callback = CheckpointCallback(save_freq=10000, save_path=log_dir, name_prefix="mybuddy_policy_checkpoint")
 
 policy_kwargs = dict(activation_fn=torch.nn.ReLU, 
-                     net_arch=dict(pi=[64, 64], qf=[400, 300]),
+                     net_arch=dict(pi=[64, 64, 64], qf=[400, 300, 300, 400]),
                     #  features_extractor_class=CustomCombinedExtractor
                      )
 action_n = my_env.action_space.shape[0]
