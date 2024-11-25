@@ -279,13 +279,31 @@ class SimulationEnv:
     def add_goal_cube(self):
         self.goal_cube = self._world.scene.add(
             VisualCuboid(
-                prim_path="/goal_cube",
-                name="my_goal_cube",
+                prim_path="/goal_cube_1",
+                name="my_goal_cube_1",
                 position=np.array([0, -0.4, 0.22]),
                 color=np.array([1.0, 0.0, 0.0]),
-                size=0.08,
+                size=0.04,
             )
         )
+        # self.goal_cube_2 = self._world.scene.add(
+        #     VisualCuboid(
+        #         prim_path="/goal_cube_2",
+        #         name="my_goal_cube_2",
+        #         position=np.array([0, -0.4, 0.22]),
+        #         color=np.array([1.0, 0.0, 0.0]),
+        #         size=0.08,
+        #     )
+        # )
+        # self.goal_cube_3 = self._world.scene.add(
+        #     VisualCuboid(
+        #         prim_path="/goal_cube_3",
+        #         name="my_goal_cube_3",
+        #         position=np.array([0, -0.4, 0.22]),
+        #         color=np.array([1.0, 0.0, 0.0]),
+        #         size=0.08,
+        #     )
+        # )
 
     def add_rgb_camera(self):
         RESOLUTION = (256, 256)

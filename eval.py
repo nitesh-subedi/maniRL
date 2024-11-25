@@ -15,7 +15,8 @@ CONFIG = {
 
 # Choose the policy path to visualize
 # policy_path = "/maniRL/new_obs_results/SAC_multi_v36/mybuddy_policy_checkpoint_100000_steps.zip"
-policy_path = "/maniRL/new_obs_results/SAC_high_level_v60/mybuddy_policy_checkpoint_100000_steps.zip"
+policy_path = "/maniRL/new_obs_results/SAC_high_level_multiple_cubes_v4/mybuddy_policy_checkpoint_10000_steps.zip"
+print(f"Loading policy from {policy_path}")
 
 my_env = maniEnv(config=CONFIG)
 model = SAC.load(policy_path)
@@ -32,7 +33,7 @@ for _ in range(20):
         # print('\n')
         obs, reward, terminated, truncated, info = my_env.step(actions)
         done = terminated or truncated  
-        # print(f"Reward: {reward}")
+        print(f"Reward: {reward}")
         # time.sleep(0.1)
 
 my_env.reset()

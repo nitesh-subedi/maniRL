@@ -21,7 +21,7 @@ import numpy as np
 set_random_seed(42)
 # Argument parsing
 parser = argparse.ArgumentParser()
-parser.add_argument('--run_name', type=str, default="SAC_high_level_v60", help='Name of the run')
+parser.add_argument('--run_name', type=str, default="SAC_high_level_multiple_cubes_v4", help='Name of the run')
 parser.add_argument('--load_model', type=str, help='Path to the model to load', default="")
 args = parser.parse_args()
 
@@ -108,12 +108,12 @@ total_timesteps = 1000000
 callback = CheckpointCallback(save_freq=10000, save_path=log_dir, name_prefix="mybuddy_policy_checkpoint")
 
 policy_kwargs = dict(activation_fn=torch.nn.ReLU, 
-                     net_arch=dict(pi=[64, 64, 64], qf=[400, 300, 300, 400]),
+                     net_arch=dict(pi=[64, 64], qf=[400, 300]),
                     #  features_extractor_class=CustomCombinedExtractor
                      )
 action_n = my_env.action_space.shape[0]
 
-action_noise = NormalActionNoise(mean=np.zeros(action_n), sigma=0.2 * np.ones(action_n))
+action_noise = NormalActionNoise(mean=np.zeros(action_n), sigma=0.3 * np.ones(action_n))
 
 # Load the model if a path is provided, otherwise create a new model
 if load_model and os.path.exists(load_model):
