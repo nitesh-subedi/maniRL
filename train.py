@@ -7,72 +7,20 @@ import wandb
 from wandb.integration.sb3 import WandbCallback
 from stable_baselines3.common.utils import set_random_seed
 import torch
-import torch as th
-from torch import nn
 import argparse
 import os
-import torchvision.models as models
-import gymnasium as gym
 from stable_baselines3.common.noise import NormalActionNoise
 import numpy as np
-# from policy_network import MultiActorPolicy
-
 
 set_random_seed(42)
 # Argument parsing
 parser = argparse.ArgumentParser()
-parser.add_argument('--run_name', type=str, default="SAC_high_level_multiple_cubes_v4", help='Name of the run')
+parser.add_argument('--run_name', type=str, default="SAC_high_level_v67", help='Name of the run')
 parser.add_argument('--load_model', type=str, help='Path to the model to load', default="")
 args = parser.parse_args()
 
 run_name = args.run_name
 load_model = args.load_model
-
-
-from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-
-# Define a custom feature extractor for the image
-class CustomCombinedExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space: gym.spaces.Dict):
-        super().__init__(observation_space, features_dim=1)
-
-        extractors = {}
-        total_concat_size = 0
-
-        for key, subspace in observation_space.spaces.items():
-            if key == "image":
-                # Use ResNet (pre-trained or untrained) as the feature extractor for image
-                resnet = models.resnet18(pretrained=True)
-                # Remove the final classification layer, keeping the feature extractor part
-                resnet = nn.Sequential(*list(resnet.children())[:-1])
-                for param in resnet.parameters():
-                    param.requires_grad = False
-
-                extractors[key] = nn.Sequential(
-                    resnet,
-                    nn.Flatten()
-                )
-                # The output size of resnet18 is 512
-                total_concat_size += 512
-            elif key == "end_effector_pos":
-                # For the vector input, we'll use a simple MLP with 16 output units
-                extractors[key] = nn.Sequential(
-                    nn.Linear(subspace.shape[0], 16),
-                    nn.ReLU()
-                )
-                total_concat_size += 16
-
-        self.extractors = nn.ModuleDict(extractors)
-        self._features_dim = total_concat_size
-
-    def forward(self, observations) -> th.Tensor:
-        encoded_tensor_list = []
-
-        for key, extractor in self.extractors.items():
-            encoded_tensor_list.append(extractor(observations[key]))
-
-        return th.cat(encoded_tensor_list, dim=1)
-
 
 name = run_name
 run = wandb.init(
@@ -107,13 +55,12 @@ my_env = Monitor(my_env)
 total_timesteps = 1000000
 callback = CheckpointCallback(save_freq=10000, save_path=log_dir, name_prefix="mybuddy_policy_checkpoint")
 
-policy_kwargs = dict(activation_fn=torch.nn.ReLU, 
-                     net_arch=dict(pi=[64, 64], qf=[400, 300]),
-                    #  features_extractor_class=CustomCombinedExtractor
-                     )
+policy_kwargs = dict(activation_fn=torch.nn.Tanh, 
+                     net_arch=dict(pi=[64, 64], qf=[400, 300]))
+
 action_n = my_env.action_space.shape[0]
 
-action_noise = NormalActionNoise(mean=np.zeros(action_n), sigma=0.3 * np.ones(action_n))
+action_noise = NormalActionNoise(mean=np.zeros(action_n), sigma=0.2 * np.ones(action_n))
 
 # Load the model if a path is provided, otherwise create a new model
 if load_model and os.path.exists(load_model):
@@ -125,6 +72,7 @@ if load_model and os.path.exists(load_model):
                     device="cuda:0",
                     tensorboard_log=f"{log_dir}/tensorboard")
     print(f"Loaded model from {load_model}")
+
 else:
     model = SAC(
         "MultiInputPolicy",
@@ -133,7 +81,7 @@ else:
         policy_kwargs=policy_kwargs,
         buffer_size=100000,
         batch_size=256,
-        gamma=0.9,
+        gamma=0.8,
         action_noise=action_noise,
         device="cuda:0",
         tensorboard_log=f"{log_dir}/tensorboard",

@@ -5,6 +5,46 @@ import cv2
 from isaacsim import SimulationApp
 import time
 import gc
+import ikpy.chain
+import os
+import omni
+
+def euler_angles_to_quat(euler_angles, order="xyz"):
+    """
+    Convert Euler angles to a quaternion.
+
+    Args:
+        euler_angles (list or np.ndarray): Euler angles [roll, pitch, yaw] in radians.
+        order (str): Order of rotation axes. Default is 'xyz'.
+
+    Returns:
+        np.ndarray: Quaternion [w, x, y, z].
+    """
+    roll, pitch, yaw = euler_angles
+
+    # Calculate trigonometric values
+    cy = np.cos(yaw * 0.5)
+    sy = np.sin(yaw * 0.5)
+    cp = np.cos(pitch * 0.5)
+    sp = np.sin(pitch * 0.5)
+    cr = np.cos(roll * 0.5)
+    sr = np.sin(roll * 0.5)
+
+    # Compute quaternion components
+    if order == "xyz":
+        w = cr * cp * cy + sr * sp * sy
+        x = sr * cp * cy - cr * sp * sy
+        y = cr * sp * cy + sr * cp * sy
+        z = cr * cp * sy - sr * sp * cy
+    elif order == "zyx":
+        w = cr * cp * cy + sr * sp * sy
+        x = cr * sp * sy - sr * cp * cy
+        y = cr * sp * cy + sr * cp * sy
+        z = sr * sp * cy - cr * cp * sy
+    else:
+        raise ValueError(f"Unsupported order: {order}")
+
+    return np.array([w, x, y, z])
 
 
 class MyBuddyEnv(gym.Env):
@@ -66,21 +106,18 @@ class MyBuddyEnv(gym.Env):
             'image': image_obs_space,
             'end_effector_pos': end_effector_space
         })
-        # self.observation_space = image_obs_space
-
-        self.lower_red = np.array([90, 50, 50])
-        self.upper_red = np.array([130, 255, 255])
-
-        self.lower_green = np.array([35, 40, 40])
-        self.upper_green = np.array([85, 255, 255]) 
 
         self.episode_length = 0
         self.initial_angles = np.deg2rad([-90, -110, 120, -120, 180, 0]) # -90, 30, 120, -120, 0, 0
         # Initialize list to store previous actions for intrinsic reward calculation
         self.tic = time.time()
-        self.max_angles = np.deg2rad([-80, 40, 130, -90, 50+180])
-        self.min_angles = np.deg2rad([-100, 0, 100, -130, -50+180])
+        self.max_angles = np.deg2rad([-80, 30, 120, -90, 50+180])
+        self.min_angles = np.deg2rad([-110, -10, 100, -130, -50+180])
         self.last_angles = self.initial_angles[:5]
+        # self.ikchain = ikpy.chain.Chain.from_urdf_file("/isaac_sim_assets/urdf/urdf.urdf")
+        # os.makedirs("/maniRL/images", exist_ok=True)
+        # self.action_low = np.array([-0.05, -0.35, 0.01])
+        # self.action_high = np.array([0.3, -0.15, 0.35])
 
 
     def step(self, action):
@@ -88,14 +125,19 @@ class MyBuddyEnv(gym.Env):
         action = np.clip(action, self.min_angles, self.max_angles)
         # print(np.rad2deg(action))
         self.robot.send_angles(0, np.append(action, 0.0), degrees=False)
-        self.world._world.step()
         self.last_angles = action
+
+        # action = np.clip(action, -1.0, 1.0)
+        # action = self.action_low + (action + 1.0) / 2.0 * (self.action_high - self.action_low)
+        # # Compute joint angles using inverse kinematics
+        # angles = self.ikchain.inverse_kinematics(target_position=action)[1:]
+        # angles = np.clip(angles, self.min_angles, self.max_angles)
+        # self.robot.send_angles(0, angles, degrees=False)
+        self.world._world.step()
         rgb_obs, depth_obs = self.get_observation()
-        rgb_obs = cv2.cvtColor(rgb_obs, cv2.COLOR_BGR2RGB)
         # rgb_obs = np.zeros_like(rgb_obs)
         ee_location = np.array(self.robot.get_ee_position())
-        # print(ee_location)
-        reward = self.get_reward(rgb_obs, depth_obs)
+        reward = self.get_reward(rgb_obs, depth_obs, ee_location)
         # Combine rewards
         total_reward = reward #+ int_reward
         self.episode_length += 1
@@ -110,9 +152,9 @@ class MyBuddyEnv(gym.Env):
     
     def get_observation(self):
         rgb, depth = self.world.get_image()
-        return rgb, depth
+        return cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB), depth
 
-    def get_reward(self, rgb_obs, depth_obs):
+    def get_reward(self, rgb_obs, depth_obs, ee_location):
         rgb_obs_resized = cv2.resize(rgb_obs, (depth_obs.shape[1], depth_obs.shape[0]), interpolation=cv2.INTER_NEAREST)
 
         # Define cube and plant masks
@@ -137,15 +179,18 @@ class MyBuddyEnv(gym.Env):
         unwanted_pixels = np.sum(plant_mask & cv2.cvtColor(rgb_plant_binary, cv2.COLOR_RGB2GRAY))
 
         # Calculate reward
-        # reward = -(unwanted_pixels / 63000)
-        reward = (wanted_pixels / 2500) * 0.2
+        reward = -(unwanted_pixels / 63000)
+        reward += (wanted_pixels / 2500) * 0.5
 
         # Save images at intervals
         if time.time() - self.tic > 2.0:
             # print(-(unwanted_pixels / 63000), (wanted_pixels / 2500) * 0.2)
             cv2.imwrite("/maniRL/images/cube.png", rgb_cube)
             cv2.imwrite("/maniRL/images/plant.png", rgb_plant)
+            cv2.imwrite("/maniRL/images/full_image.png", rgb_obs)
             self.tic = time.time()
+        
+        # reward -=ee_location[0] * 0.5
         # Clean up
         del unwanted_pixels, plant_mask, rgb_plant
         return reward
@@ -155,20 +200,27 @@ class MyBuddyEnv(gym.Env):
             return True
         return False
     
-    def reset(self, seed=None):
+    def reset(self, seed=None, *args, **kwargs):
         self.world._world.reset()
         # initial_angles = np.deg2rad([-90, np.random.uniform(-110, 40), 120, -120, 0, 0]) # -90, 30, 120, -120, 0, 0
-        init_angles = np.deg2rad([-90, 0, 120, -120, 180, 0])
+        init_angles = np.deg2rad([-90, np.random.uniform(-10, 0), 120, -120, 180, 0])
         self.robot.send_angles(0, init_angles, degrees=False)
         self.world.goal_cube.set_world_pose([np.random.uniform(-0.2, 0.2), 
                                              -0.4, 
                                              np.random.uniform(0.22, 0.4)], [0, 0, 0, 1])
-        # self.world.goal_cube_2.set_world_pose([np.random.uniform(-0.3, 0.3), 
-        #                                      -0.4, 
-        #                                      np.random.uniform(0.22, 0.4)], [0, 0, 0, 1])
-        # self.world.goal_cube_3.set_world_pose([np.random.uniform(-0.3, 0.3), 
-        #                                      -0.4, 
-        #                                      np.random.uniform(0.22, 0.4)], [0, 0, 0, 1])
+        self.world.goal_cube_2.set_world_pose([np.random.uniform(-0.3, 0.3), 
+                                             -0.4, 
+                                             np.random.uniform(0.15, 0.4)], [0, 0, 0, 1])
+        self.world.goal_cube_3.set_world_pose([np.random.uniform(-0.4, 0.4), 
+                                             -0.4, 
+                                             np.random.uniform(0.15, 0.4)], [0, 0, 0, 1])
+        from pxr import Gf
+        random_orientation = euler_angles_to_quat(np.random.uniform(-np.pi, np.pi, 3))
+        # Set the DomeLight orientation
+        self.world.dome_light.GetAttribute("xformOp:orient").Set(
+            Gf.Quatd(random_orientation[0], Gf.Vec3d(*random_orientation[1:]))
+        )
+        self.world.randomize_environment()
         for i in range(30):
             self.world._world.step()
         self.episode_length = 0
@@ -223,5 +275,3 @@ class MyBuddyEnv(gym.Env):
         self.previous_actions.append(action)
         
         return intrinsic_reward
-
-

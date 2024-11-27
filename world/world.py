@@ -9,7 +9,8 @@ from omni.isaac.core import PhysicsContext
 from omni.isaac.core.utils.stage import add_reference_to_stage
 import omni.isaac.core.utils.prims as prims_utils
 import omni.replicator.core as rep
-from omni.isaac.core.prims import XFormPrim
+import omni.isaac.core.utils.render_product as rp
+from omni.isaac.core.utils.rotations import euler_angles_to_quat
 import asyncio
 
 
@@ -36,6 +37,7 @@ class SimulationEnv:
         scene.CreateGravityMagnitudeAttr().Set(9.81)
 
     def initialise(self, usd_path, env_usd, hdr_path):
+        self.plant_usd = usd_path
         self.make_ground_plane_small()
         sphere_path = Sdf.Path("/World/defaultGroundPlane/SphereLight")
         sphere_prim = self.stage.GetPrimAtPath(sphere_path)
@@ -55,6 +57,50 @@ class SimulationEnv:
         asyncio.run(self.setup_and_evaluate())
 
 
+
+        # import omni.graph.core as og
+
+        # keys = og.Controller.Keys
+        # (texture_graph_handle, texture_list_of_nodes, _, _) = og.Controller.edit(
+        #     {"graph_path": "/push_graph", "evaluator_name": "execution"},
+        #     {
+        #         keys.CREATE_NODES: [
+        #             ("rgb_texture_to_device_buffer", "omni.syntheticdata.SdPostRenderVarTextureToBuffer"),
+        #             ("depth_texture_to_device_buffer", "omni.syntheticdata.SdPostRenderVarTextureToBuffer"),
+        #             ("rgb_device_to_host_buffer", "omni.syntheticdata.SdPostRenderVarToHost"),
+        #             ("depth_device_to_host_buffer", "omni.syntheticdata.SdPostRenderVarToHost"),
+        #         ],
+        #         keys.SET_VALUES: [
+        #             ("rgb_texture_to_device_buffer.inputs:renderVar", self.rgb_rv),
+        #             ("depth_texture_to_device_buffer.inputs:renderVar", self.depth_rv),
+        #         ],
+        #         keys.CONNECT: [
+        #             ("rgb_texture_to_device_buffer.outputs:renderVar", "rgb_device_to_host_buffer.inputs:renderVar"),
+        #             ("depth_texture_to_device_buffer.outputs:renderVar", "depth_device_to_host_buffer.inputs:renderVar"),
+        #         ],
+        #     },
+        # )
+
+        # # Evaluate the graph after creating nodes and setting values
+        # og.Controller.evaluate(texture_graph_handle)
+        # rgb_device_to_host_buffer = texture_list_of_nodes[2]
+        # depth_device_to_host_buffer = texture_list_of_nodes[3]
+        # rgb_new_render_var = rgb_device_to_host_buffer.get_attribute("outputs:renderVar").get(on_gpu=True)
+        # depth_new_render_var = depth_device_to_host_buffer.get_attribute("outputs:renderVar").get(on_gpu=True)
+        # print(f"New render var for RGB: {rgb_new_render_var}")
+        # print(f"New render var for Depth: {depth_new_render_var}")
+
+        # # Setup annotators that will report groundtruth
+        # self.rgb = rep.AnnotatorRegistry.get_annotator("LdrColorSDIsaacConvertRGBAToRGB")
+        # self.depth = rep.AnnotatorRegistry.get_annotator("DepthLinearized")
+        # self.rgb.renderVar = rgb_new_render_var
+        # self.depth.renderVar = depth_new_render_var
+        # # self.rgb.initialize(renderVar=rgb_new_render_var)
+        # # self.depth.initialize(renderVar=depth_new_render_var)
+        # self.rgb.attach(self.rgb_camera_render_product)
+        # self.depth.attach(self.depth_camera_render_product)
+    
+    
         # import omni.graph.core as og
 
         # keys = og.Controller.Keys
@@ -136,6 +182,8 @@ class SimulationEnv:
         self.depth = rep.AnnotatorRegistry.get_annotator("DepthLinearized")
         self.rgb.renderVar = rgb_new_render_var
         self.depth.renderVar = depth_new_render_var
+        # rp.add_aov(self.rgb_camera_render_product, rgb_new_render_var)
+        # rp.add_aov(self.depth_camera_render_product, depth_new_render_var)
         # self.rgb.initialize(renderVar=rgb_new_render_var)
         # self.depth.initialize(renderVar=depth_new_render_var)
         self.rgb.attach(self.rgb_camera_render_product)
@@ -167,10 +215,10 @@ class SimulationEnv:
 
     
     def import_lighting(self, hdr_path:str):
-        dome_light = prims_utils.create_prim(
+        self.dome_light = prims_utils.create_prim(
             "/World/Dome_light",
             "DomeLight",
-            # position=np.array([1.0, 1.0, 1.0]),
+            orientation=euler_angles_to_quat(np.random.uniform(0, np.pi * 2, 3)),
             attributes={
                 "inputs:texture:file": hdr_path,
                 "inputs:intensity": 1000,
@@ -189,24 +237,27 @@ class SimulationEnv:
         rotateOp.Set(Gf.Vec3d(0, 0, 0))
         scaleOp = xform.AddScaleOp()
         scaleOp.Set(Gf.Vec3d(0.01, 0.01, 0.01))
+    
+    def randomize_environment(self):
+        self.plant_translateOp.Set(Gf.Vec3d(np.random.uniform(-0.1, 0.1), np.random.uniform(-0.15, -0.1), 0.0))
 
 
     def import_plant_mesh(self, usd_path):
-        plant = add_reference_to_stage(usd_path=usd_path, prim_path="/Plant")
-        xform = UsdGeom.Xformable(plant)
+        self.plant = add_reference_to_stage(usd_path=usd_path, prim_path="/Plant")
+        xform = UsdGeom.Xformable(self.plant)
         xform.ClearXformOpOrder()
-        translateOp = xform.AddTranslateOp()
-        translateOp.Set(Gf.Vec3d(0, -0.15, 0.0))
+        self.plant_translateOp = xform.AddTranslateOp()
+        self.plant_translateOp.Set(Gf.Vec3d(np.random.uniform(-0.15, 0.15), np.random.uniform(-0.15, -0.1), 0.0))
         rotateOp = xform.AddRotateXYZOp()
         rotateOp.Set(Gf.Vec3d(0, 0, 0))
         scaleOp = xform.AddScaleOp()
         scaleOp.Set(Gf.Vec3d(0.05, 0.05, 0.05))
 
         # Get childerns
-        meshes = plant.GetAllChildren()
+        meshes = self.plant.GetAllChildren()
         meshes = [mesh.GetAllChildren()[0] for mesh in meshes]
         meshes = meshes[1:]
-        prim_dict = dict(zip(plant.GetAllChildrenNames()[1:], meshes))
+        prim_dict = dict(zip(self.plant.GetAllChildrenNames()[1:], meshes))
         self.make_deformable(prim_dict)
 
         # # Contact offset
@@ -286,31 +337,31 @@ class SimulationEnv:
                 size=0.04,
             )
         )
-        # self.goal_cube_2 = self._world.scene.add(
-        #     VisualCuboid(
-        #         prim_path="/goal_cube_2",
-        #         name="my_goal_cube_2",
-        #         position=np.array([0, -0.4, 0.22]),
-        #         color=np.array([1.0, 0.0, 0.0]),
-        #         size=0.08,
-        #     )
-        # )
-        # self.goal_cube_3 = self._world.scene.add(
-        #     VisualCuboid(
-        #         prim_path="/goal_cube_3",
-        #         name="my_goal_cube_3",
-        #         position=np.array([0, -0.4, 0.22]),
-        #         color=np.array([1.0, 0.0, 0.0]),
-        #         size=0.08,
-        #     )
-        # )
+        self.goal_cube_2 = self._world.scene.add(
+            VisualCuboid(
+                prim_path="/goal_cube_2",
+                name="my_goal_cube_2",
+                position=np.array([0, -0.4, 0.22]),
+                color=np.array([0.0, 1.0, 0.0]),
+                size=0.03,
+            )
+        )
+        self.goal_cube_3 = self._world.scene.add(
+            VisualCuboid(
+                prim_path="/goal_cube_3",
+                name="my_goal_cube_3",
+                position=np.array([0, -0.4, 0.22]),
+                color=np.array([0.0, 0.0, 1.0]),
+                size=0.08,
+            )
+        )
 
     def add_rgb_camera(self):
         RESOLUTION = (256, 256)
         self.rgb_camera = rep.create.camera(
             position=(0.0, -0.04, 0.36),
             rotation=(0, 0, 90),
-            focal_length=11.8,
+            focal_length=15.8,
             focus_distance = 0.0,
             clipping_range=(0.01, 1000000.0),
             f_stop = 0.0
@@ -322,7 +373,7 @@ class SimulationEnv:
         self.depth_camera = rep.create.camera(
             position=(0.0, -0.04, 0.36),
             rotation=(0, 0, 90),
-            focal_length=11.8,
+            focal_length=15.8,
             focus_distance = 0.0,
             clipping_range=(0.01, 1000000.0),
             f_stop = 0.0
