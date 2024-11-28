@@ -111,8 +111,8 @@ class MyBuddyEnv(gym.Env):
         self.initial_angles = np.deg2rad([-90, -110, 120, -120, 180, 0]) # -90, 30, 120, -120, 0, 0
         # Initialize list to store previous actions for intrinsic reward calculation
         self.tic = time.time()
-        self.max_angles = np.deg2rad([-80, 30, 120, -90, 50+180])
-        self.min_angles = np.deg2rad([-110, -10, 100, -130, -50+180])
+        self.max_angles = np.deg2rad([-80, 30, 140, -90, 50+180])
+        self.min_angles = np.deg2rad([-120, -30, 100, -150, -50+180])
         self.last_angles = self.initial_angles[:5]
         # self.ikchain = ikpy.chain.Chain.from_urdf_file("/isaac_sim_assets/urdf/urdf.urdf")
         # os.makedirs("/maniRL/images", exist_ok=True)
@@ -121,7 +121,7 @@ class MyBuddyEnv(gym.Env):
 
 
     def step(self, action):
-        action = self.last_angles + action * 0.1
+        action = self.last_angles + action * 0.05
         action = np.clip(action, self.min_angles, self.max_angles)
         # print(np.rad2deg(action))
         self.robot.send_angles(0, np.append(action, 0.0), degrees=False)
@@ -203,8 +203,6 @@ class MyBuddyEnv(gym.Env):
     def reset(self, seed=None, *args, **kwargs):
         self.world._world.reset()
         # initial_angles = np.deg2rad([-90, np.random.uniform(-110, 40), 120, -120, 0, 0]) # -90, 30, 120, -120, 0, 0
-        init_angles = np.deg2rad([-90, np.random.uniform(-10, 0), 120, -120, 180, 0])
-        self.robot.send_angles(0, init_angles, degrees=False)
         self.world.goal_cube.set_world_pose([np.random.uniform(-0.2, 0.2), 
                                              -0.4, 
                                              np.random.uniform(0.22, 0.4)], [0, 0, 0, 1])
@@ -214,13 +212,16 @@ class MyBuddyEnv(gym.Env):
         self.world.goal_cube_3.set_world_pose([np.random.uniform(-0.4, 0.4), 
                                              -0.4, 
                                              np.random.uniform(0.15, 0.4)], [0, 0, 0, 1])
-        from pxr import Gf
-        random_orientation = euler_angles_to_quat(np.random.uniform(-np.pi, np.pi, 3))
-        # Set the DomeLight orientation
-        self.world.dome_light.GetAttribute("xformOp:orient").Set(
-            Gf.Quatd(random_orientation[0], Gf.Vec3d(*random_orientation[1:]))
-        )
-        self.world.randomize_environment()
+        # from pxr import Gf
+        # random_orientation = euler_angles_to_quat(np.random.uniform(-np.pi, np.pi, 3))
+        # # Set the DomeLight orientation
+        # self.world.dome_light.GetAttribute("xformOp:orient").Set(
+        #     Gf.Quatd(random_orientation[0], Gf.Vec3d(*random_orientation[1:]))
+        # )
+        x_pose, y_pose = np.random.uniform(-0.1, 0.1), np.random.uniform(-0.15, -0.1)
+        self.world.randomize_environment(x_pose, y_pose)
+        init_angles = np.deg2rad([-90, np.random.uniform(-20, 30), 120, -120, 180, 0])
+        self.robot.send_angles(0, init_angles, degrees=False)
         for i in range(30):
             self.world._world.step()
         self.episode_length = 0

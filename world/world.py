@@ -12,6 +12,7 @@ import omni.replicator.core as rep
 import omni.isaac.core.utils.render_product as rp
 from omni.isaac.core.utils.rotations import euler_angles_to_quat
 import asyncio
+from omni.kit.viewport.utility import get_active_viewport
 
 
 class SimulationEnv:
@@ -49,6 +50,15 @@ class SimulationEnv:
         self.add_goal_cube()
         self.add_rgb_camera()
         self.add_depth_camera()
+        self.viewport = get_active_viewport()
+        viewport_cam_rp_path = self.viewport.render_product_path
+        self.viewport_cam_rp = self.stage.GetPrimAtPath(viewport_cam_rp_path)
+        viewport_cam = self.viewport.get_active_camera()
+        viewport_cam_prim = self.stage.GetPrimAtPath(viewport_cam)
+        translation_attr = viewport_cam_prim.GetAttribute("xformOp:translate")
+        translation_attr.Set(Gf.Vec3d(-0.5,-0.5, 0.15))
+        rotation_attr = viewport_cam_prim.GetAttribute("xformOp:rotateXYZ")
+        rotation_attr.Set(Gf.Vec3d(0, 0, -90))
 
         # Setup the render product for the camera
         import omni.syntheticdata._syntheticdata as sd
@@ -218,7 +228,7 @@ class SimulationEnv:
         self.dome_light = prims_utils.create_prim(
             "/World/Dome_light",
             "DomeLight",
-            orientation=euler_angles_to_quat(np.random.uniform(0, np.pi * 2, 3)),
+            # orientation=euler_angles_to_quat(np.random.uniform(0, np.pi * 2, 3)),
             attributes={
                 "inputs:texture:file": hdr_path,
                 "inputs:intensity": 1000,
@@ -238,7 +248,7 @@ class SimulationEnv:
         scaleOp = xform.AddScaleOp()
         scaleOp.Set(Gf.Vec3d(0.01, 0.01, 0.01))
     
-    def randomize_environment(self):
+    def randomize_environment(self, xpose, ypose):
         self.plant_translateOp.Set(Gf.Vec3d(np.random.uniform(-0.1, 0.1), np.random.uniform(-0.15, -0.1), 0.0))
 
 
@@ -247,7 +257,7 @@ class SimulationEnv:
         xform = UsdGeom.Xformable(self.plant)
         xform.ClearXformOpOrder()
         self.plant_translateOp = xform.AddTranslateOp()
-        self.plant_translateOp.Set(Gf.Vec3d(np.random.uniform(-0.15, 0.15), np.random.uniform(-0.15, -0.1), 0.0))
+        self.plant_translateOp.Set(Gf.Vec3d(0.1, -0.2, 0.0))
         rotateOp = xform.AddRotateXYZOp()
         rotateOp.Set(Gf.Vec3d(0, 0, 0))
         scaleOp = xform.AddScaleOp()
