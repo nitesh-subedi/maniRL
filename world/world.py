@@ -37,15 +37,36 @@ class SimulationEnv:
         scene.CreateGravityDirectionAttr().Set(Gf.Vec3f(0.0, 0.0, 1.0))
         scene.CreateGravityMagnitudeAttr().Set(9.81)
 
-    def initialise(self, usd_path, env_usd, hdr_path):
-        self.plant_usd = usd_path
-        self.make_ground_plane_small()
+
+        plane_prim = prims_utils.create_prim(
+             prim_path="/World/Background_Cube",
+             prim_type="Cube",
+             position=np.array([0.0, -1.0, 1.0]),
+             scale=np.array([1, 0.01, 1]),
+         )
+        
+        # self._world.scene.add(plane_prim)
+    
+    def sphere_light(self, intensity, radius):
         sphere_path = Sdf.Path("/World/defaultGroundPlane/SphereLight")
         sphere_prim = self.stage.GetPrimAtPath(sphere_path)
-        intensity_attribute = sphere_prim.GetAttribute('intensity')
-        intensity_attribute.Set(0.0)
-        self.import_lighting(hdr_path)
-        self.import_environment(env_usd)
+        light_intensity_attribute = sphere_prim.GetAttribute('intensity')
+        light_intensity_attribute.Set(intensity)
+        radius_attr = sphere_prim.GetAttribute('radius')
+        radius_attr.Set(radius)
+        # exposure_attr = sphere_prim.GetAttribute('exposure')
+        # exposure_attr.Set(0.5)
+        translateop = UsdGeom.Xformable(sphere_prim)
+        translateop.ClearXformOpOrder()
+        translateOp = translateop.AddTranslateOp()
+        translateOp.Set(Gf.Vec3d(0.0, 0.0, 2.0))
+
+    def initialise(self, usd_path, env_usd, hdr_path):
+        self.plant_usd = usd_path
+        self.sphere_light(10000, 1.0)
+        # self.make_ground_plane_small()
+        # self.import_lighting(hdr_path)
+        # self.import_environment(env_usd)
         self.import_plant_mesh(usd_path)
         self.add_goal_cube()
         self.add_rgb_camera()
@@ -66,93 +87,6 @@ class SimulationEnv:
         self.depth_rv = omni.syntheticdata.SyntheticData.convert_sensor_type_to_rendervar(sd.SensorType.Depth.name)
         asyncio.run(self.setup_and_evaluate())
 
-
-
-        # import omni.graph.core as og
-
-        # keys = og.Controller.Keys
-        # (texture_graph_handle, texture_list_of_nodes, _, _) = og.Controller.edit(
-        #     {"graph_path": "/push_graph", "evaluator_name": "execution"},
-        #     {
-        #         keys.CREATE_NODES: [
-        #             ("rgb_texture_to_device_buffer", "omni.syntheticdata.SdPostRenderVarTextureToBuffer"),
-        #             ("depth_texture_to_device_buffer", "omni.syntheticdata.SdPostRenderVarTextureToBuffer"),
-        #             ("rgb_device_to_host_buffer", "omni.syntheticdata.SdPostRenderVarToHost"),
-        #             ("depth_device_to_host_buffer", "omni.syntheticdata.SdPostRenderVarToHost"),
-        #         ],
-        #         keys.SET_VALUES: [
-        #             ("rgb_texture_to_device_buffer.inputs:renderVar", self.rgb_rv),
-        #             ("depth_texture_to_device_buffer.inputs:renderVar", self.depth_rv),
-        #         ],
-        #         keys.CONNECT: [
-        #             ("rgb_texture_to_device_buffer.outputs:renderVar", "rgb_device_to_host_buffer.inputs:renderVar"),
-        #             ("depth_texture_to_device_buffer.outputs:renderVar", "depth_device_to_host_buffer.inputs:renderVar"),
-        #         ],
-        #     },
-        # )
-
-        # # Evaluate the graph after creating nodes and setting values
-        # og.Controller.evaluate(texture_graph_handle)
-        # rgb_device_to_host_buffer = texture_list_of_nodes[2]
-        # depth_device_to_host_buffer = texture_list_of_nodes[3]
-        # rgb_new_render_var = rgb_device_to_host_buffer.get_attribute("outputs:renderVar").get(on_gpu=True)
-        # depth_new_render_var = depth_device_to_host_buffer.get_attribute("outputs:renderVar").get(on_gpu=True)
-        # print(f"New render var for RGB: {rgb_new_render_var}")
-        # print(f"New render var for Depth: {depth_new_render_var}")
-
-        # # Setup annotators that will report groundtruth
-        # self.rgb = rep.AnnotatorRegistry.get_annotator("LdrColorSDIsaacConvertRGBAToRGB")
-        # self.depth = rep.AnnotatorRegistry.get_annotator("DepthLinearized")
-        # self.rgb.renderVar = rgb_new_render_var
-        # self.depth.renderVar = depth_new_render_var
-        # # self.rgb.initialize(renderVar=rgb_new_render_var)
-        # # self.depth.initialize(renderVar=depth_new_render_var)
-        # self.rgb.attach(self.rgb_camera_render_product)
-        # self.depth.attach(self.depth_camera_render_product)
-    
-    
-        # import omni.graph.core as og
-
-        # keys = og.Controller.Keys
-        # (texture_graph_handle, texture_list_of_nodes, _, _) = og.Controller.edit(
-        #     {"graph_path": "/push_graph", "evaluator_name": "execution"},
-        #     {
-        #         keys.CREATE_NODES: [
-        #             ("rgb_texture_to_device_buffer", "omni.syntheticdata.SdPostRenderVarTextureToBuffer"),
-        #             ("depth_texture_to_device_buffer", "omni.syntheticdata.SdPostRenderVarTextureToBuffer"),
-        #             ("rgb_device_to_host_buffer", "omni.syntheticdata.SdPostRenderVarToHost"),
-        #             ("depth_device_to_host_buffer", "omni.syntheticdata.SdPostRenderVarToHost"),
-        #         ],
-        #         keys.SET_VALUES: [
-        #             ("rgb_texture_to_device_buffer.inputs:renderVar", self.rgb_rv),
-        #             ("depth_texture_to_device_buffer.inputs:renderVar", self.depth_rv),
-        #         ],
-        #         keys.CONNECT: [
-        #             ("rgb_texture_to_device_buffer.outputs:renderVar", "rgb_device_to_host_buffer.inputs:renderVar"),
-        #             ("depth_texture_to_device_buffer.outputs:renderVar", "depth_device_to_host_buffer.inputs:renderVar"),
-        #         ],
-        #     },
-        # )
-
-        # # Evaluate the graph after creating nodes and setting values
-        # og.Controller.evaluate(texture_graph_handle)
-        # rgb_device_to_host_buffer = texture_list_of_nodes[2]
-        # depth_device_to_host_buffer = texture_list_of_nodes[3]
-        # rgb_new_render_var = rgb_device_to_host_buffer.get_attribute("outputs:renderVar").get(on_gpu=True)
-        # depth_new_render_var = depth_device_to_host_buffer.get_attribute("outputs:renderVar").get(on_gpu=True)
-        # print(f"New render var for RGB: {rgb_new_render_var}")
-        # print(f"New render var for Depth: {depth_new_render_var}")
-
-        # # Setup annotators that will report groundtruth
-        # self.rgb = rep.AnnotatorRegistry.get_annotator("LdrColorSDIsaacConvertRGBAToRGB")
-        # self.depth = rep.AnnotatorRegistry.get_annotator("DepthLinearized")
-        # self.rgb.renderVar = rgb_new_render_var
-        # self.depth.renderVar = depth_new_render_var
-        # # self.rgb.initialize(renderVar=rgb_new_render_var)
-        # # self.depth.initialize(renderVar=depth_new_render_var)
-        # self.rgb.attach(self.rgb_camera_render_product)
-        # self.depth.attach(self.depth_camera_render_product)
-    
     async def setup_and_evaluate(self):
         import omni.graph.core as og
         keys = og.Controller.Keys
@@ -249,7 +183,8 @@ class SimulationEnv:
         scaleOp.Set(Gf.Vec3d(0.01, 0.01, 0.01))
     
     def randomize_environment(self, xpose, ypose):
-        self.plant_translateOp.Set(Gf.Vec3d(np.random.uniform(-0.1, 0.1), np.random.uniform(-0.15, -0.1), 0.0))
+        self.plant_translateOp.Set(Gf.Vec3d(xpose, ypose, 0.0))
+        # self.light_intensity_attribute.Set(np.random.uniform(500.0, 1000.0))
 
 
     def import_plant_mesh(self, usd_path):
@@ -257,7 +192,7 @@ class SimulationEnv:
         xform = UsdGeom.Xformable(self.plant)
         xform.ClearXformOpOrder()
         self.plant_translateOp = xform.AddTranslateOp()
-        self.plant_translateOp.Set(Gf.Vec3d(0.1, -0.2, 0.0))
+        self.plant_translateOp.Set(Gf.Vec3d(0.0, -0.2, 0.0))
         rotateOp = xform.AddRotateXYZOp()
         rotateOp.Set(Gf.Vec3d(0, 0, 0))
         scaleOp = xform.AddScaleOp()

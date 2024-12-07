@@ -114,89 +114,72 @@ class MyBuddyEnv(gym.Env):
         self.max_angles = np.deg2rad([-80, 30, 140, -90, 50+180])
         self.min_angles = np.deg2rad([-120, -30, 100, -150, -50+180])
         self.last_angles = self.initial_angles[:5]
-        # self.ikchain = ikpy.chain.Chain.from_urdf_file("/isaac_sim_assets/urdf/urdf.urdf")
-        # os.makedirs("/maniRL/images", exist_ok=True)
-        # self.action_low = np.array([-0.05, -0.35, 0.01])
-        # self.action_high = np.array([0.3, -0.15, 0.35])
-
-
-    def step(self, action):
-        action = self.last_angles + action * 0.05
-        action = np.clip(action, self.min_angles, self.max_angles)
-        # print(np.rad2deg(action))
-        self.robot.send_angles(0, np.append(action, 0.0), degrees=False)
-        self.last_angles = action
-
-        # action = np.clip(action, -1.0, 1.0)
-        # action = self.action_low + (action + 1.0) / 2.0 * (self.action_high - self.action_low)
-        # # Compute joint angles using inverse kinematics
-        # angles = self.ikchain.inverse_kinematics(target_position=action)[1:]
-        # angles = np.clip(angles, self.min_angles, self.max_angles)
-        # self.robot.send_angles(0, angles, degrees=False)
-        self.world._world.step()
-        rgb_obs, depth_obs = self.get_observation()
-        # rgb_obs = np.zeros_like(rgb_obs)
-        ee_location = np.array(self.robot.get_ee_position())
-        reward = self.get_reward(rgb_obs, depth_obs, ee_location)
-        # Combine rewards
-        total_reward = reward #+ int_reward
-        self.episode_length += 1
-        if self.episode_length % 100 == 0:
-            gc.collect()
-        truncated = self.is_truncated()
-        observation = {
-            'image': rgb_obs,
-            'end_effector_pos': ee_location
-        }
-        return observation, float(total_reward), False, truncated, {}
     
-    def get_observation(self):
-        rgb, depth = self.world.get_image()
-        return cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB), depth
-
     def get_reward(self, rgb_obs, depth_obs, ee_location):
+        """
+        Calculate rewards based on lexicographic ordering:
+        1. Primary Objective: Maximize cube visibility.
+        2. Secondary Objective: Minimize plant visibility.
+        """
         rgb_obs_resized = cv2.resize(rgb_obs, (depth_obs.shape[1], depth_obs.shape[0]), interpolation=cv2.INTER_NEAREST)
 
         # Define cube and plant masks
         cube_mask = (depth_obs >= 0.28) & (depth_obs <= 0.44)
         plant_mask = (depth_obs >= 0.01) & (depth_obs <= 0.27)
 
-        # Apply depth masks to the RGB image
-        rgb_cube = rgb_obs_resized.copy()
-        rgb_cube[~cube_mask] = 0
+        # Calculate pixel counts for cube and plant
+        cube_pixels = np.sum(cube_mask)
+        plant_pixels = np.sum(plant_mask)
 
-        rgb_plant = rgb_obs_resized.copy()
-        rgb_plant[~plant_mask] = 0
+        # Lexicographic rewards
+        if cube_pixels >= 2000:  # Example threshold for sufficient cube visibility
+            # Secondary objective: Minimize plant visibility
+            reward = -plant_pixels / 63000.0
+        else:
+            # Primary objective: Focus on increasing cube visibility
+            reward = cube_pixels / 2500.0
 
-        # Ensure masks are boolean and apply them properly
-        cube_mask = cube_mask.astype(np.uint8)
-        plant_mask = plant_mask.astype(np.uint8)
-        rgb_cube_binary = (rgb_cube > 0).astype(np.uint8)
-        rgb_plant_binary = (rgb_plant > 0).astype(np.uint8)
-
-        # Calculate wanted and unwanted pixels
-        wanted_pixels = np.sum(cube_mask & cv2.cvtColor(rgb_cube_binary, cv2.COLOR_RGB2GRAY))
-        unwanted_pixels = np.sum(plant_mask & cv2.cvtColor(rgb_plant_binary, cv2.COLOR_RGB2GRAY))
-
-        # Calculate reward
-        reward = -(unwanted_pixels / 63000)
-        reward += (wanted_pixels / 2500) * 0.5
-
-        # Save images at intervals
+        # Save images at intervals for debugging
         if time.time() - self.tic > 2.0:
-            # print(-(unwanted_pixels / 63000), (wanted_pixels / 2500) * 0.2)
-            cv2.imwrite("/maniRL/images/cube.png", rgb_cube)
-            cv2.imwrite("/maniRL/images/plant.png", rgb_plant)
-            cv2.imwrite("/maniRL/images/full_image.png", rgb_obs)
+            cv2.imwrite("/maniRL/images/cube.png", rgb_obs_resized * cube_mask[..., None])
+            cv2.imwrite("/maniRL/images/plant.png", rgb_obs_resized * plant_mask[..., None])
             self.tic = time.time()
-        
-        # reward -=ee_location[0] * 0.5
-        # Clean up
-        del unwanted_pixels, plant_mask, rgb_plant
+
         return reward
 
+    def step(self, action):
+        action = self.last_angles + action * 0.1
+        action = np.clip(action, self.min_angles, self.max_angles)
+        self.robot.send_angles(0, np.append(action, 0.0), degrees=False)
+        self.last_angles = action
+
+        self.world._world.step()
+        rgb_obs, depth_obs = self.get_observation()
+        ee_location = np.array(self.robot.get_ee_position())
+
+        # Calculate reward
+        reward = self.get_reward(rgb_obs, depth_obs, ee_location)
+
+        # Update state
+        self.episode_length += 1
+        truncated = self.is_truncated()
+        observation = {
+            'image': rgb_obs,
+            'end_effector_pos': ee_location
+        }
+
+        # Return lexicographic-based reward
+        return observation, float(reward), False, truncated, {}
+
+
+    
+    def get_observation(self):
+        rgb, depth = self.world.get_image()
+        return cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB), depth
+
+
     def is_truncated(self):
-        if self.world._world.current_time_step_index - self._steps_after_reset >= self._max_episode_length:
+        if self.episode_length >= self._max_episode_length:
             return True
         return False
     
@@ -212,24 +195,22 @@ class MyBuddyEnv(gym.Env):
         self.world.goal_cube_3.set_world_pose([np.random.uniform(-0.4, 0.4), 
                                              -0.4, 
                                              np.random.uniform(0.15, 0.4)], [0, 0, 0, 1])
-        # from pxr import Gf
-        # random_orientation = euler_angles_to_quat(np.random.uniform(-np.pi, np.pi, 3))
-        # # Set the DomeLight orientation
-        # self.world.dome_light.GetAttribute("xformOp:orient").Set(
-        #     Gf.Quatd(random_orientation[0], Gf.Vec3d(*random_orientation[1:]))
-        # )
-        x_pose, y_pose = np.random.uniform(-0.1, 0.1), np.random.uniform(-0.15, -0.1)
-        self.world.randomize_environment(x_pose, y_pose)
-        init_angles = np.deg2rad([-90, np.random.uniform(-20, 30), 120, -120, 180, 0])
+        
+        first_joint = np.random.uniform(-110, -80)
+        if np.random.uniform() < 0.2:
+            second_joint = np.random.uniform(10, 30)
+        else:
+            second_joint = np.random.uniform(-30, 0)
+        self.robot.send_angles(0, np.array([first_joint, second_joint, 120, 0, 0, 0]), degrees=True)
+        for i in range(30):
+            self.world._world.step()
+        init_angles = np.deg2rad([first_joint, second_joint, 120, -120, 180, 0])
         self.robot.send_angles(0, init_angles, degrees=False)
         for i in range(30):
             self.world._world.step()
+
         self.episode_length = 0
         self.last_angles = init_angles[:5]
-        # self.previous_actions = []
-        self.w = {}
-        self.observing_cube = False
-        self.total_visits = 0
         ee_location = np.array(self.robot.get_ee_position())
         rgb_obs, depth_obs = self.get_observation()
         observation = {
@@ -243,36 +224,3 @@ class MyBuddyEnv(gym.Env):
 
     def close(self):
         self._simulation_app.close()
-
-    def seed(self, seed=None):
-        self.np_random, seed = gym.utils.seeding.np_random(seed)
-        np.random.seed(seed)
-        return [seed]
-
-    def get_intrinsic_reward(self, action):
-        decay_factor = 0.99
-
-        if not self.previous_actions:
-            intrinsic_reward = 10.0
-        else:
-            prev_actions = np.array(self.previous_actions)
-            
-            # Compute Euclidean distances between the current action and all previous actions
-            distances = np.linalg.norm(prev_actions - action, axis=1)
-            
-            # Generate decay weights for all previous actions
-            weights = decay_factor ** np.arange(len(self.previous_actions) - 1, -1, -1)
-            
-            # Compute weighted distances
-            weighted_distances = weights * distances
-            
-            # Find the minimum weighted distance
-            min_weighted_distance = np.min(weighted_distances)
-            
-            # Compute intrinsic reward
-            intrinsic_reward = 1.0 / (1.0 + min_weighted_distance) * 10.0
-
-        # Append current action to previous actions
-        self.previous_actions.append(action)
-        
-        return intrinsic_reward
