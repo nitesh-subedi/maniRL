@@ -5,46 +5,6 @@ import cv2
 from isaacsim import SimulationApp
 import time
 import gc
-import ikpy.chain
-import os
-import omni
-
-def euler_angles_to_quat(euler_angles, order="xyz"):
-    """
-    Convert Euler angles to a quaternion.
-
-    Args:
-        euler_angles (list or np.ndarray): Euler angles [roll, pitch, yaw] in radians.
-        order (str): Order of rotation axes. Default is 'xyz'.
-
-    Returns:
-        np.ndarray: Quaternion [w, x, y, z].
-    """
-    roll, pitch, yaw = euler_angles
-
-    # Calculate trigonometric values
-    cy = np.cos(yaw * 0.5)
-    sy = np.sin(yaw * 0.5)
-    cp = np.cos(pitch * 0.5)
-    sp = np.sin(pitch * 0.5)
-    cr = np.cos(roll * 0.5)
-    sr = np.sin(roll * 0.5)
-
-    # Compute quaternion components
-    if order == "xyz":
-        w = cr * cp * cy + sr * sp * sy
-        x = sr * cp * cy - cr * sp * sy
-        y = cr * sp * cy + sr * cp * sy
-        z = cr * cp * sy - sr * sp * cy
-    elif order == "zyx":
-        w = cr * cp * cy + sr * sp * sy
-        x = cr * sp * sy - sr * cp * cy
-        y = cr * sp * cy + sr * cp * sy
-        z = sr * sp * cy - cr * cp * sy
-    else:
-        raise ValueError(f"Unsupported order: {order}")
-
-    return np.array([w, x, y, z])
 
 
 class MyBuddyEnv(gym.Env):
@@ -115,7 +75,7 @@ class MyBuddyEnv(gym.Env):
         self.min_angles = np.deg2rad([-120, -30, 100, -150, -50+180])
         self.last_angles = self.initial_angles[:5]
     
-    def get_reward(self, rgb_obs, depth_obs, ee_location):
+    def get_reward(self, rgb_obs, depth_obs):
         """
         Calculate rewards based on lexicographic ordering:
         1. Primary Objective: Maximize cube visibility.
@@ -125,24 +85,25 @@ class MyBuddyEnv(gym.Env):
 
         # Define cube and plant masks
         cube_mask = (depth_obs >= 0.28) & (depth_obs <= 0.44)
-        plant_mask = (depth_obs >= 0.01) & (depth_obs <= 0.27)
+        # plant_mask = (depth_obs >= 0.01) & (depth_obs <= 0.27)
 
         # Calculate pixel counts for cube and plant
         cube_pixels = np.sum(cube_mask)
-        plant_pixels = np.sum(plant_mask)
+        # plant_pixels = np.sum(plant_mask)
 
-        # Lexicographic rewards
-        if cube_pixels >= 2000:  # Example threshold for sufficient cube visibility
-            # Secondary objective: Minimize plant visibility
-            reward = -plant_pixels / 63000.0
-        else:
-            # Primary objective: Focus on increasing cube visibility
-            reward = cube_pixels / 2500.0
+        # # Lexicographic rewards
+        # if cube_pixels >= 2000:  # Example threshold for sufficient cube visibility
+        #     # Secondary objective: Minimize plant visibility
+        #     reward = -plant_pixels / 63000.0
+        # else:
+        #     # Primary objective: Focus on increasing cube visibility
+        reward = cube_pixels / 2500.0
 
         # Save images at intervals for debugging
         if time.time() - self.tic > 2.0:
             cv2.imwrite("/maniRL/images/cube.png", rgb_obs_resized * cube_mask[..., None])
-            cv2.imwrite("/maniRL/images/plant.png", rgb_obs_resized * plant_mask[..., None])
+            # cv2.imwrite("/maniRL/images/plant.png", rgb_obs_resized * plant_mask[..., None])
+            cv2.imwrite("/maniRL/images/full_image.png", rgb_obs_resized)
             self.tic = time.time()
 
         return reward
@@ -158,7 +119,7 @@ class MyBuddyEnv(gym.Env):
         ee_location = np.array(self.robot.get_ee_position())
 
         # Calculate reward
-        reward = self.get_reward(rgb_obs, depth_obs, ee_location)
+        reward = self.get_reward(rgb_obs, depth_obs)
 
         # Update state
         self.episode_length += 1
@@ -170,13 +131,10 @@ class MyBuddyEnv(gym.Env):
 
         # Return lexicographic-based reward
         return observation, float(reward), False, truncated, {}
-
-
     
     def get_observation(self):
         rgb, depth = self.world.get_image()
         return cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB), depth
-
 
     def is_truncated(self):
         if self.episode_length >= self._max_episode_length:
@@ -195,6 +153,12 @@ class MyBuddyEnv(gym.Env):
         self.world.goal_cube_3.set_world_pose([np.random.uniform(-0.4, 0.4), 
                                              -0.4, 
                                              np.random.uniform(0.15, 0.4)], [0, 0, 0, 1])
+        self.world.goal_cube_4.set_world_pose([np.random.uniform(-0.5, 0.5),
+                                                -0.4,
+                                                np.random.uniform(0.15, 0.4)], [0, 0, 0, 1])
+        self.world.goal_cube_5.set_world_pose([np.random.uniform(-0.6, 0.6),
+                                                -0.4,
+                                                np.random.uniform(0.15, 0.4)], [0, 0, 0, 1])
         
         first_joint = np.random.uniform(-110, -80)
         if np.random.uniform() < 0.2:
@@ -217,6 +181,7 @@ class MyBuddyEnv(gym.Env):
             'image': rgb_obs,
             'end_effector_pos': ee_location
         }
+        gc.collect()
         return observation, {}
 
     def render(self, mode="human"):

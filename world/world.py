@@ -41,12 +41,10 @@ class SimulationEnv:
         plane_prim = prims_utils.create_prim(
              prim_path="/World/Background_Cube",
              prim_type="Cube",
-             position=np.array([0.0, -1.0, 1.0]),
+             position=np.array([0.0, -0.7, 1.0]),
              scale=np.array([1, 0.01, 1]),
          )
-        
-        # self._world.scene.add(plane_prim)
-    
+            
     def sphere_light(self, intensity, radius):
         sphere_path = Sdf.Path("/World/defaultGroundPlane/SphereLight")
         sphere_prim = self.stage.GetPrimAtPath(sphere_path)
@@ -62,12 +60,13 @@ class SimulationEnv:
         translateOp.Set(Gf.Vec3d(0.0, 0.0, 2.0))
 
     def initialise(self, usd_path, env_usd, hdr_path):
-        self.plant_usd = usd_path
         self.sphere_light(10000, 1.0)
         # self.make_ground_plane_small()
         # self.import_lighting(hdr_path)
         # self.import_environment(env_usd)
-        self.import_plant_mesh(usd_path)
+        self.import_plant_mesh(usd_path, prim_name="/Plant", translation=[0.0, -0.2, 0.0], rotation=[0, 0, 0])
+        self.import_plant_mesh(usd_path, prim_name="/Plant2", translation=[0.1, -0.2, 0.0], rotation=[0, 0, 90])
+        self.import_plant_mesh(usd_path, prim_name="/Plant3", translation=[-0.1, -0.15, 0.0], rotation=[0, 0, 45])
         self.add_goal_cube()
         self.add_rgb_camera()
         self.add_depth_camera()
@@ -126,10 +125,6 @@ class SimulationEnv:
         self.depth = rep.AnnotatorRegistry.get_annotator("DepthLinearized")
         self.rgb.renderVar = rgb_new_render_var
         self.depth.renderVar = depth_new_render_var
-        # rp.add_aov(self.rgb_camera_render_product, rgb_new_render_var)
-        # rp.add_aov(self.depth_camera_render_product, depth_new_render_var)
-        # self.rgb.initialize(renderVar=rgb_new_render_var)
-        # self.depth.initialize(renderVar=depth_new_render_var)
         self.rgb.attach(self.rgb_camera_render_product)
         self.depth.attach(self.depth_camera_render_product)
     
@@ -181,35 +176,31 @@ class SimulationEnv:
         rotateOp.Set(Gf.Vec3d(0, 0, 0))
         scaleOp = xform.AddScaleOp()
         scaleOp.Set(Gf.Vec3d(0.01, 0.01, 0.01))
-    
-    def randomize_environment(self, xpose, ypose):
-        self.plant_translateOp.Set(Gf.Vec3d(xpose, ypose, 0.0))
-        # self.light_intensity_attribute.Set(np.random.uniform(500.0, 1000.0))
 
 
-    def import_plant_mesh(self, usd_path):
-        self.plant = add_reference_to_stage(usd_path=usd_path, prim_path="/Plant")
-        xform = UsdGeom.Xformable(self.plant)
+    def import_plant_mesh(self, usd_path, prim_name, translation, rotation):
+        plant = add_reference_to_stage(usd_path=usd_path, prim_path=prim_name)
+        xform = UsdGeom.Xformable(plant)
         xform.ClearXformOpOrder()
-        self.plant_translateOp = xform.AddTranslateOp()
-        self.plant_translateOp.Set(Gf.Vec3d(0.0, -0.2, 0.0))
+        plant_translateOp = xform.AddTranslateOp()
+        plant_translateOp.Set(Gf.Vec3d(*translation))
         rotateOp = xform.AddRotateXYZOp()
-        rotateOp.Set(Gf.Vec3d(0, 0, 0))
+        rotateOp.Set(Gf.Vec3d(*rotation))
         scaleOp = xform.AddScaleOp()
         scaleOp.Set(Gf.Vec3d(0.05, 0.05, 0.05))
 
         # Get childerns
-        meshes = self.plant.GetAllChildren()
+        meshes = plant.GetAllChildren()
         meshes = [mesh.GetAllChildren()[0] for mesh in meshes]
         meshes = meshes[1:]
-        prim_dict = dict(zip(self.plant.GetAllChildrenNames()[1:], meshes))
+        prim_dict = dict(zip(plant.GetAllChildrenNames()[1:], meshes))
         self.make_deformable(prim_dict)
 
         # # Contact offset
         # contact_offset_attr = self.cylinder_prim.GetAttribute("physxCollision:contactOffset")
         # contact_offset_attr.Set(0.001)
 
-        self.attach_cylinder_to_ground(prim_dict)
+        self.attach_cylinder_to_ground(prim_dict, prim_name)
         # key, self.stem_prim = list(prim_dict.items())[0] # Step prim path
         # # print(f"Stem prim path: {self.stem_prim.GetPath()}")
         # self.poif = XFormPrim("/Tracker1", position = Gf.Vec3d(0.077, 0.09, 0.36))
@@ -248,7 +239,7 @@ class SimulationEnv:
         return position
        
 
-    def attach_cylinder_to_ground(self, prim_dict):
+    def attach_cylinder_to_ground(self, prim_dict, prim_name):
         key, value = list(prim_dict.items())[0]
         attachment_path = value.GetPath().AppendElementString(f"attachment_{key}")
         stalk_attachment = PhysxSchema.PhysxPhysicsAttachment.Define(self.stage, attachment_path)
@@ -268,7 +259,7 @@ class SimulationEnv:
             attachment_path = value.GetPath().AppendElementString(f"attachment_{key}")
             stalk_attachment = PhysxSchema.PhysxPhysicsAttachment.Define(self.stage, attachment_path)
             stalk_attachment.GetActor0Rel().SetTargets([value.GetPath()])
-            stalk_attachment.GetActor1Rel().SetTargets(["/Plant/stalk/plant_023"])
+            stalk_attachment.GetActor1Rel().SetTargets([f"{prim_name}/stalk/plant_023"])
             auto_attachment_api = PhysxSchema.PhysxAutoAttachmentAPI.Apply(stalk_attachment.GetPrim())
 
 
@@ -298,6 +289,24 @@ class SimulationEnv:
                 position=np.array([0, -0.4, 0.22]),
                 color=np.array([0.0, 0.0, 1.0]),
                 size=0.08,
+            )
+        )
+        self.goal_cube_4 = self._world.scene.add(
+            VisualCuboid(
+                prim_path="/goal_cube_4",
+                name="my_goal_cube_4",
+                position=np.array([0, -0.4, 0.22]),
+                color=np.array([1.0, 0.0, 1.0]),
+                size=0.07,
+            )
+        )
+        self.goal_cube_5 = self._world.scene.add(
+            VisualCuboid(
+                prim_path="/goal_cube_5",
+                name="my_goal_cube_5",
+                position=np.array([0, -0.4, 0.22]),
+                color=np.array([0.0, 1.0, 1.0]),
+                size=0.02,
             )
         )
 
