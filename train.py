@@ -16,7 +16,7 @@ import numpy as np
 set_random_seed(42)
 # Argument parsing
 parser = argparse.ArgumentParser()
-parser.add_argument('--run_name', type=str, default="SAC_high_level_v90", help='Name of the run')
+parser.add_argument('--run_name', type=str, default="SAC_high_level_v94", help='Name of the run')
 parser.add_argument('--load_model', type=str, help='Path to the model to load', default="")
 args = parser.parse_args()
 
@@ -82,7 +82,6 @@ else:
         policy_kwargs=policy_kwargs,
         buffer_size=100000,
         batch_size=256,
-        gamma=0.8,
         action_noise=action_noise,
         device="cuda:0",
         tensorboard_log=f"{log_dir}/tensorboard",

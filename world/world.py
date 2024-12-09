@@ -60,13 +60,14 @@ class SimulationEnv:
         translateOp.Set(Gf.Vec3d(0.0, 0.0, 2.0))
 
     def initialise(self, usd_path, env_usd, hdr_path):
-        self.sphere_light(10000, 1.0)
+        self.sphere_light(9000, 1.0)
         # self.make_ground_plane_small()
         # self.import_lighting(hdr_path)
         # self.import_environment(env_usd)
         self.import_plant_mesh(usd_path, prim_name="/Plant", translation=[0.0, -0.2, 0.0], rotation=[0, 0, 0])
         self.import_plant_mesh(usd_path, prim_name="/Plant2", translation=[0.1, -0.2, 0.0], rotation=[0, 0, 90])
-        self.import_plant_mesh(usd_path, prim_name="/Plant3", translation=[-0.1, -0.15, 0.0], rotation=[0, 0, 45])
+        self.import_plant_mesh(usd_path, prim_name="/Plant3", translation=[-0.1, -0.2, 0.0], rotation=[0, 0, 45])
+        self.import_plant_mesh(usd_path, prim_name="/Plant4", translation=[0.12, -0.2, 0.0], rotation=[0, 0, 180])
         self.add_goal_cube()
         self.add_rgb_camera()
         self.add_depth_camera()

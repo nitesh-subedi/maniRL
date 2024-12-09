@@ -16,8 +16,8 @@ class Robot:
         import_config.collision_from_visuals = True
         import_config.create_physics_scene = True
         import_config.import_inertia_tensor = False
-        import_config.default_drive_strength = 0.5
-        import_config.default_position_drive_damping = 0.3
+        import_config.default_drive_strength = 1.0
+        import_config.default_position_drive_damping = 0.1
         import_config.default_drive_type = _urdf.UrdfJointTargetType.JOINT_DRIVE_POSITION
         import_config.distance_scale = 1
         import_config.density = 0.0
@@ -59,7 +59,6 @@ class Robot:
         self.collision_meshes_for_checking = []
         self.initialise_collision_api()
         self.ee_dc=self.dc.get_rigid_body("/mybuddy/left_arm_l6")
-        self.left_ee_dc=self.dc.get_rigid_body("/mybuddy/right_arm_l6")
 
     @staticmethod
     def on_hit(hit):
@@ -129,6 +128,3 @@ class Robot:
     
     def get_ee_position(self):
         return self.dc.get_rigid_body_pose(self.ee_dc).p
-
-    def get_right_ee_position(self):
-        return self.dc.get_rigid_body_pose(self.left_ee_dc).p
