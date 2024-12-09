@@ -47,7 +47,7 @@ class MyBuddyEnv(gym.Env):
         self.world._world.step()
         self._simulation_app.update()
 
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(5,), dtype=np.float32)
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(10,), dtype=np.float32)
         image_obs_space = spaces.Box(
             low=0,
             high=255,
@@ -57,8 +57,8 @@ class MyBuddyEnv(gym.Env):
 
         # Define the end-effector position space (3 values: x, y, z)
         end_effector_space = spaces.Box(
-            low=np.array([-2.0, -2.0, -2.0]),
-            high=np.array([2.0, 2.0, 2.0]),
+            low=np.array([-2.0, -2.0, -2.0, -2.0, -2.0, -2.0]),
+            high=np.array([2.0, 2.0, 2.0, 2.0, 2.0, 2.0]),
             dtype=np.float64
         )
 
@@ -69,12 +69,19 @@ class MyBuddyEnv(gym.Env):
         })
 
         self.episode_length = 0
-        self.initial_angles = np.deg2rad([-90, -110, 120, -120, 180, 0]) # -90, 30, 120, -120, 0, 0
+        self.left_initial_angles = np.deg2rad([-90, -110, 120, -120, 180, 0]) # -90, 30, 120, -120, 0, 0
+        self.right_initial_angles = np.deg2rad([90, -110, -120, -120, 95, 0])
         # Initialize list to store previous actions for intrinsic reward calculation
         self.tic = time.time()
-        self.max_angles = np.deg2rad([-70, 30, 160, -70, 50+180])
-        self.min_angles = np.deg2rad([-130, -50, 80, -150, -50+180])
-        self.last_angles = self.initial_angles[:5]
+        self.left_max_angles = np.deg2rad([-70, 30, 160, -70, 50+180])
+        self.left_min_angles = np.deg2rad([-130, -50, 80, -150, -50+180])
+        self.right_max_angles = np.deg2rad([130, 30, -80, -70, 50+95])
+        self.right_min_angles = np.deg2rad([70, -50, -160, -150, -50+95])
+        self.left_last_angles = self.left_initial_angles[:5]
+        self.right_last_angles = self.right_initial_angles[:5]
+        self.last_angles = np.concatenate([self.left_last_angles, self.right_last_angles])
+        self.min_angles = np.concatenate([self.left_min_angles, self.right_min_angles])
+        self.max_angles = np.concatenate([self.left_max_angles, self.right_max_angles])
         self.done = False
         self.previous_actions = deque(maxlen=10000)
 
@@ -119,7 +126,8 @@ class MyBuddyEnv(gym.Env):
     def step(self, action):
         action = self.last_angles + action * 0.1
         action = np.clip(action, self.min_angles, self.max_angles)
-        self.robot.send_angles(0, np.append(action, 0.0), degrees=False)
+        self.robot.send_angles(0, np.append(action[:5], 0.0), degrees=False)
+        self.robot.send_angles(1, np.append(action[5:], 0.0), degrees=False)
         self.last_angles = action
         self.world._world.step()
         # collision, ee_colision = self.robot.check_collision()
@@ -127,7 +135,7 @@ class MyBuddyEnv(gym.Env):
         #     self.done = True
         #     return {}, -10.0, self.done, True, {}
         rgb_obs, depth_obs = self.get_observation()
-        ee_location = np.array(self.robot.get_ee_position())
+        left_ee_location, right_ee_location = np.array(self.robot.get_ee_position()), np.array(self.robot.get_right_ee_position())
 
         # Calculate reward
         reward = self.get_reward(rgb_obs, depth_obs)
@@ -137,7 +145,7 @@ class MyBuddyEnv(gym.Env):
         truncated = self.is_truncated()
         observation = {
             'image': rgb_obs,
-            'end_effector_pos': ee_location
+            'end_effector_pos': np.concatenate([left_ee_location, right_ee_location])
         }
 
         # Return lexicographic-based reward
@@ -171,27 +179,18 @@ class MyBuddyEnv(gym.Env):
                                                 -0.4,
                                                 np.random.uniform(0.15, 0.4)], [0, 0, 0, 1])
         
-        first_joint = np.random.uniform(-110, -80)
-        if np.random.uniform() < 0.2:
-            second_joint = np.random.uniform(10, 30)
-        else:
-            second_joint = np.random.uniform(-30, 0)
-        self.robot.send_angles(0, np.array([first_joint, second_joint, 120, 0, 0, 0]), degrees=True)
-        for i in range(30):
-            self.world._world.step()
-        init_angles = np.deg2rad([first_joint, second_joint, 120, -120, 180, 0])
-        self.robot.send_angles(0, init_angles, degrees=False)
-        for i in range(30):
-            self.world._world.step()
+        init_angles = np.deg2rad([-90, -110, 120, -120, 180, 90, -110, -120, -120, 95])
+        self.robot.send_angles(0, np.append(init_angles[:5], 0.0), degrees=False)
+        self.robot.send_angles(1, np.append(init_angles[5:], 0.0), degrees=False)
 
         self.episode_length = 0
         self.done = False
-        self.last_angles = init_angles[:5]
-        ee_location = np.array(self.robot.get_ee_position())
+        self.last_angles = init_angles
+        left_ee_location, right_ee_location = np.array(self.robot.get_ee_position()), np.array(self.robot.get_right_ee_position())
         rgb_obs, depth_obs = self.get_observation()
         observation = {
             'image': rgb_obs,
-            'end_effector_pos': ee_location
+            'end_effector_pos': np.concatenate([left_ee_location, right_ee_location])
         }
         gc.collect()
         return observation, {}
