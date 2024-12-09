@@ -5,6 +5,7 @@ import cv2
 from isaacsim import SimulationApp
 import time
 import gc
+from collections import deque 
 
 
 class MyBuddyEnv(gym.Env):
@@ -71,9 +72,12 @@ class MyBuddyEnv(gym.Env):
         self.initial_angles = np.deg2rad([-90, -110, 120, -120, 180, 0]) # -90, 30, 120, -120, 0, 0
         # Initialize list to store previous actions for intrinsic reward calculation
         self.tic = time.time()
-        self.max_angles = np.deg2rad([-80, 30, 140, -90, 50+180])
-        self.min_angles = np.deg2rad([-120, -30, 100, -150, -50+180])
+        self.max_angles = np.deg2rad([-70, 30, 160, -70, 50+180])
+        self.min_angles = np.deg2rad([-130, -50, 80, -150, -50+180])
         self.last_angles = self.initial_angles[:5]
+        self.done = False
+        self.previous_actions = deque(maxlen=10000)
+
     
     def get_reward(self, rgb_obs, depth_obs):
         """
@@ -97,7 +101,11 @@ class MyBuddyEnv(gym.Env):
         #     reward = -plant_pixels / 63000.0
         # else:
         #     # Primary objective: Focus on increasing cube visibility
-        reward = cube_pixels / 2500.0
+        if cube_pixels >= (2500 * 4):  # Example threshold for sufficient cube visibility
+            reward = 10.0
+            self.done = True
+        else:
+            reward = cube_pixels / 2500.0
 
         # Save images at intervals for debugging
         if time.time() - self.tic > 2.0:
@@ -113,8 +121,11 @@ class MyBuddyEnv(gym.Env):
         action = np.clip(action, self.min_angles, self.max_angles)
         self.robot.send_angles(0, np.append(action, 0.0), degrees=False)
         self.last_angles = action
-
         self.world._world.step()
+        # collision, ee_colision = self.robot.check_collision()
+        # if collision or ee_colision:
+        #     self.done = True
+        #     return {}, -10.0, self.done, True, {}
         rgb_obs, depth_obs = self.get_observation()
         ee_location = np.array(self.robot.get_ee_position())
 
@@ -130,7 +141,7 @@ class MyBuddyEnv(gym.Env):
         }
 
         # Return lexicographic-based reward
-        return observation, float(reward), False, truncated, {}
+        return observation, float(reward), self.done, truncated, {}
     
     def get_observation(self):
         rgb, depth = self.world.get_image()
@@ -174,6 +185,7 @@ class MyBuddyEnv(gym.Env):
             self.world._world.step()
 
         self.episode_length = 0
+        self.done = False
         self.last_angles = init_angles[:5]
         ee_location = np.array(self.robot.get_ee_position())
         rgb_obs, depth_obs = self.get_observation()
@@ -189,3 +201,31 @@ class MyBuddyEnv(gym.Env):
 
     def close(self):
         self._simulation_app.close()
+    
+    def get_intrinsic_reward(self, action):
+        decay_factor = 0.99
+
+        if not self.previous_actions:
+            intrinsic_reward = 1.0
+        else:
+            prev_actions = np.array(self.previous_actions)
+            
+            # Compute Euclidean distances between the current action and all previous actions
+            distances = np.linalg.norm(prev_actions - action, axis=1)
+            
+            # Generate decay weights for all previous actions
+            weights = decay_factor ** np.arange(len(self.previous_actions) - 1, -1, -1)
+            
+            # Compute weighted distances
+            weighted_distances = weights * distances
+            
+            # Find the minimum weighted distance
+            min_weighted_distance = np.min(weighted_distances)
+            
+            # Compute intrinsic reward
+            intrinsic_reward = 1.0 / (1.0 + min_weighted_distance)
+
+        # Append current action to previous actions
+        self.previous_actions.append(action)
+        
+        return intrinsic_reward

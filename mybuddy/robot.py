@@ -16,8 +16,8 @@ class Robot:
         import_config.collision_from_visuals = True
         import_config.create_physics_scene = True
         import_config.import_inertia_tensor = False
-        import_config.default_drive_strength = 1000000000.0000
-        import_config.default_position_drive_damping = 10.35988
+        import_config.default_drive_strength = 0.08
+        import_config.default_position_drive_damping = 0.1
         import_config.default_drive_type = _urdf.UrdfJointTargetType.JOINT_DRIVE_POSITION
         import_config.distance_scale = 1
         import_config.density = 0.0

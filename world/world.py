@@ -217,13 +217,27 @@ class SimulationEnv:
 
     def make_deformable(self, prim_dict, simulation_resolution=10):
         key, value = list(prim_dict.items())[0]
+        # Add deformable material
+        deformable_material_path = omni.usd.get_stage_next_free_path(self.stage, "/plant_material", True)
+
+        # Create the material
+        deformableUtils.add_deformable_body_material(
+            self.stage,
+            deformable_material_path,
+            youngs_modulus=7.5e19,
+            poissons_ratio=0.1,
+            damping_scale=0.0,
+            dynamic_friction=0.5,
+            density=1000
+        )
         deformableUtils.add_physx_deformable_body(
                 self.stage,
                 value.GetPath(),
                 collision_simplification=True,
-                simulation_hexahedral_resolution=10,
+                simulation_hexahedral_resolution=simulation_resolution,
                 self_collision=False,
             )
+        physicsUtils.add_physics_material_to_prim(self.stage, value.GetPrim(), deformable_material_path)
         
         for key, value in list(prim_dict.items())[1:]:
             deformableUtils.add_physx_deformable_body(
@@ -233,6 +247,8 @@ class SimulationEnv:
                 simulation_hexahedral_resolution=simulation_resolution,
                 self_collision=False,
             )
+            physicsUtils.add_physics_material_to_prim(self.stage, value.GetPrim(), deformable_material_path)
+         
         
     def get_stem_location(self):
         position, orientation = self.poif.get_world_pose()
@@ -270,7 +286,7 @@ class SimulationEnv:
                 name="my_goal_cube_1",
                 position=np.array([0, -0.4, 0.22]),
                 color=np.array([1.0, 0.0, 0.0]),
-                size=0.04,
+                size=0.08,
             )
         )
         self.goal_cube_2 = self._world.scene.add(
@@ -279,7 +295,7 @@ class SimulationEnv:
                 name="my_goal_cube_2",
                 position=np.array([0, -0.4, 0.22]),
                 color=np.array([0.0, 1.0, 0.0]),
-                size=0.03,
+                size=0.08,
             )
         )
         self.goal_cube_3 = self._world.scene.add(
@@ -297,7 +313,7 @@ class SimulationEnv:
                 name="my_goal_cube_4",
                 position=np.array([0, -0.4, 0.22]),
                 color=np.array([1.0, 0.0, 1.0]),
-                size=0.07,
+                size=0.08,
             )
         )
         self.goal_cube_5 = self._world.scene.add(
@@ -306,7 +322,7 @@ class SimulationEnv:
                 name="my_goal_cube_5",
                 position=np.array([0, -0.4, 0.22]),
                 color=np.array([0.0, 1.0, 1.0]),
-                size=0.02,
+                size=0.08,
             )
         )
 
